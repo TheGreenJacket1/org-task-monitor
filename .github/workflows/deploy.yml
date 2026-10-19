@@ -42,9 +42,17 @@ jobs:
       - name: Build Application
         run: npm run build
         env:
-          VITE_BASE_PATH: './'
+          VITE_BASE_PATH: '/org-task-monitor/'
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Verify build output
+        run: |
+          test -f dist/index.html
+          if grep -q "src/main.tsx" dist/index.html; then
+            echo "Build output masih mereferensikan source TypeScript mentah"; exit 1
+          fi
+          test -d dist/assets
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

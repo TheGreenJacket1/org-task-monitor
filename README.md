@@ -101,7 +101,7 @@ Skema SQL lengkap dengan tabel relasional, foreign keys, constraints, triggers, 
 
 ## 4. Panduan Deployment ke GitHub Pages
 
-Aplikasi telah dikonfigurasi dengan `base: './'` pada Vite serta skrip pengalihan SPA [`public/404.html`](file:///C:/Users/Cloud/.gemini/antigravity/scratch/org-task-monitor/public/404.html) agar kompatibel dengan sub-direktori repositori GitHub Pages.
+Aplikasi telah dikonfigurasi dengan `base: '/org-task-monitor/'` pada Vite serta skrip pengalihan SPA [`public/404.html`](file:///C:/Users/Cloud/.gemini/antigravity/scratch/org-task-monitor/public/404.html) agar kompatibel dengan sub-direktori repositori GitHub Pages.
 
 Alur CI/CD otomatis telah disiapkan pada:
 [`.github/workflows/deploy.yml`](file:///C:/Users/Cloud/.gemini/antigravity/scratch/org-task-monitor/.github/workflows/deploy.yml)
