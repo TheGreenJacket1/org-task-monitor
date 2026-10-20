@@ -158,7 +158,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
     const taskPayload: Partial<Task> = {
       organization_id: organizationId,
-      activity_id: activityId,
+      activity_id: taskToEdit ? taskToEdit.activity_id : activityId,
       title: title.trim(),
       description: description.trim(),
       category,

@@ -82,6 +82,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <option value="NEW">+ Kelola / Buat Organisasi...</option>
                 </select>
               </div>
+              <button
+                onClick={onOpenOrgModal}
+                className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                title="Kelola Organisasi"
+              >
+                <Building2 className="w-4 h-4" />
+              </button>
             </div>
           </div>
 

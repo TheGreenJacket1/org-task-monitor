@@ -210,19 +210,21 @@ class StorageService {
       if (actsRes.error) throw actsRes.error
       if (tasksRes.error) throw tasksRes.error
 
-      if (orgsRes.data) {
+      // Hanya timpa data lokal jika Supabase benar-benar memiliki data,
+      // agar data lokal (termasuk demo) tidak hilang saat terhubung ke proyek kosong.
+      if (orgsRes.data && orgsRes.data.length > 0) {
         localStorage.setItem(STORAGE_KEYS.ORGANIZATIONS, JSON.stringify(orgsRes.data))
       }
-      if (memsRes.data) {
+      if (memsRes.data && memsRes.data.length > 0) {
         localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(memsRes.data))
       }
-      if (actsRes.data) {
+      if (actsRes.data && actsRes.data.length > 0) {
         localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(actsRes.data))
       }
-      if (tasksRes.data) {
+      if (tasksRes.data && tasksRes.data.length > 0) {
         localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasksRes.data))
       }
-      if (logsRes.data) {
+      if (logsRes.data && logsRes.data.length > 0) {
         localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logsRes.data))
       }
 
