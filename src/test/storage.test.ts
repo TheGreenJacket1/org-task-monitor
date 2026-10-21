@@ -178,4 +178,145 @@ describe('StorageService & Business Rules', () => {
     const orgs = storageService.getOrganizations()
     expect(orgs.some((o) => o.name.includes('[DEMO]'))).toBe(false)
   })
+
+  it('rejects creating activities and members without a valid organization', async () => {
+    await expect(
+      storageService.createActivity({
+        organization_id: '',
+        name: 'Kegiatan Tanpa Organisasi',
+        start_date: '2026-10-20',
+        end_date: '2026-10-30',
+        is_active: true,
+        is_archived: false,
+      })
+    ).rejects.toThrow(/organisasi/i)
+
+    await expect(
+      storageService.createMember({
+        organization_id: 'org-tidak-ada',
+        name: 'Anggota Tanpa Organisasi',
+        role: 'Staf',
+        is_active: true,
+      })
+    ).rejects.toThrow(/organisasi/i)
+
+    // No orphan rows may be written to localStorage.
+    expect(storageService.getActivities('')).toHaveLength(0)
+    expect(storageService.getMembers('org-tidak-ada')).toHaveLength(0)
+  })
+
+  it('rejects creating a task without a valid activity in the organization', async () => {
+    const orgId = storageService.getOrganizations()[0].id
+
+    await expect(
+      storageService.createTask({
+        organization_id: orgId,
+        activity_id: '',
+        title: 'Tugas Tanpa Kegiatan',
+        description: '',
+        category: 'Administrasi',
+        phase: 'Pra-acara',
+        priority: 'Sedang',
+        pic_id: 'demo-m-1',
+        start_date: '2026-10-20',
+        deadline: '2026-10-30',
+        status: 'Belum dikerjakan',
+        progress: 0,
+        review_status: 'Belum diajukan',
+        reference_links: [],
+        result_links: [],
+        is_archived: false,
+      })
+    ).rejects.toThrow(/kegiatan/i)
+  })
+
+  it('includes all activity logs in exported backups', async () => {
+    const orgId = storageService.getOrganizations()[0].id
+    await storageService.logActivity(
+      orgId,
+      undefined,
+      undefined,
+      'Tester',
+      'PENGUJIAN',
+      'Log khusus pengujian ekspor'
+    )
+
+    const parsed = JSON.parse(storageService.exportAllData())
+    expect(
+      parsed.activityLogs.some((log: { details: string }) => log.details === 'Log khusus pengujian ekspor')
+    ).toBe(true)
+  })
+
+  it('keeps real organization logs when clearing demo data', async () => {
+    const realOrg = await storageService.createOrganization({
+      name: 'Organisasi Nyata',
+      code: 'NYATA',
+      description: 'Organisasi non-demo',
+    })
+    await storageService.logActivity(
+      realOrg.id,
+      undefined,
+      undefined,
+      'Sistem',
+      'PENGUJIAN',
+      'Riwayat organisasi nyata'
+    )
+
+    storageService.clearDemoData()
+
+    const logs = storageService.getActivityLogs(realOrg.id)
+    expect(logs.some((log) => log.details === 'Riwayat organisasi nyata')).toBe(true)
+  })
+
+  it('deletes an organization with all dependent local data and switches to a remaining org', async () => {
+    const previousOrgId = storageService.getOrganizations()[0].id
+    const org = await storageService.createOrganization({
+      name: 'Organisasi Sementara',
+      code: 'TEMP',
+      description: 'Akan dihapus',
+    })
+    expect(storageService.getCurrentOrgId()).toBe(org.id)
+
+    const member = await storageService.createMember({
+      organization_id: org.id,
+      name: 'Anggota Sementara',
+      role: 'Staf',
+      is_active: true,
+    })
+    const activity = await storageService.createActivity({
+      organization_id: org.id,
+      name: 'Kegiatan Sementara',
+      start_date: '2026-10-21',
+      end_date: '2026-10-31',
+      is_active: true,
+      is_archived: false,
+    })
+    await storageService.createTask({
+      organization_id: org.id,
+      activity_id: activity.id,
+      title: 'Tugas Sementara',
+      description: '',
+      category: 'Administrasi',
+      phase: 'Pra-acara',
+      priority: 'Sedang',
+      pic_id: member.id,
+      start_date: '2026-10-21',
+      deadline: '2026-10-31',
+      status: 'Belum dikerjakan',
+      progress: 0,
+      review_status: 'Belum diajukan',
+      reference_links: [],
+      result_links: [],
+      is_archived: false,
+    })
+
+    await storageService.deleteOrganization(org.id)
+
+    expect(storageService.getOrganizations().some((o) => o.id === org.id)).toBe(false)
+    expect(storageService.getMembers(org.id)).toHaveLength(0)
+    expect(storageService.getActivities(org.id)).toHaveLength(0)
+    expect(storageService.getTasks(org.id)).toHaveLength(0)
+    expect(storageService.getActivityLogs(org.id)).toHaveLength(0)
+    expect(storageService.getCurrentOrgId()).toBe(previousOrgId)
+  })
 })

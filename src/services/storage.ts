@@ -326,17 +326,18 @@ class StorageService {
   }
 
   public async deleteOrganization(id: string): Promise<boolean> {
+    const wasCurrentOrg = this.getCurrentOrgId() === id
     let orgs = this.getOrganizations()
     orgs = orgs.filter((o) => o.id !== id)
     localStorage.setItem(STORAGE_KEYS.ORGANIZATIONS, JSON.stringify(orgs))
 
-    // Cascade delete members, activities, tasks locally
-    const mems = this.getMembers(id)
+    // Cascade delete members, activities, tasks, and logs locally
     localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(this.getAllMembers().filter((m) => m.organization_id !== id)))
     localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(this.getAllActivities().filter((a) => a.organization_id !== id)))
     localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(this.getAllTasks().filter((t) => t.organization_id !== id)))
+    localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(this.getAllLogs().filter((l) => l.organization_id !== id)))
 
-    if (this.getCurrentOrgId() === id) {
+    if (wasCurrentOrg) {
       const remaining = this.getOrganizations()
       if (remaining.length > 0) {
         this.setCurrentOrgId(remaining[0].id)
@@ -360,6 +361,19 @@ class StorageService {
 
   // --- CRUD: Members ---
 
+  /**
+   * Prevents creating orphan records (organization_id empty or pointing to a
+   * deleted organization) that would never appear in any organization view.
+   */
+  private assertOrganizationExists(orgId?: string): void {
+    if (!orgId) {
+      throw new Error('Organisasi belum dipilih. Buat atau pilih organisasi terlebih dahulu.')
+    }
+    if (!this.getOrganizations().some((o) => o.id === orgId)) {
+      throw new Error('Organisasi tidak ditemukan. Muat ulang data atau buat organisasi baru.')
+    }
+  }
+
   private getAllMembers(): Member[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.MEMBERS)
@@ -375,6 +389,8 @@ class StorageService {
   }
 
   public async createMember(data: Omit<Member, 'id' | 'created_at'>): Promise<Member> {
+    this.assertOrganizationExists(data.organization_id)
+
     const newMember: Member = {
       ...data,
       id: crypto.randomUUID ? crypto.randomUUID() : 'm-' + Date.now(),
@@ -468,6 +484,7 @@ class StorageService {
   public async createActivity(data: Omit<Activity, 'id' | 'created_at' | 'updated_at'>): Promise<Activity> {
     const all = this.getAllActivities()
     const orgId = data.organization_id
+    this.assertOrganizationExists(orgId)
 
     // Rule: "Setiap organisasi dapat memiliki beberapa kegiatan, tetapi hanya satu kegiatan aktif pada satu waktu."
     if (data.is_active) {
@@ -614,6 +631,15 @@ class StorageService {
   }
 
   public async createTask(data: Omit<Task, 'id' | 'created_at' | 'updated_at'>, actorName = 'Pengguna'): Promise<Task> {
+    this.assertOrganizationExists(data.organization_id)
+
+    const parentActivity = this.getAllActivities().find(
+      (a) => a.id === data.activity_id && a.organization_id === data.organization_id
+    )
+    if (!parentActivity) {
+      throw new Error('Kegiatan tidak ditemukan. Buat atau aktifkan kegiatan terlebih dahulu.')
+    }
+
     // Normalization rules
     let progress = Number(data.progress) || 0
     let completed_at = data.completed_at
@@ -790,14 +816,19 @@ class StorageService {
 
   // --- CRUD: Logs ---
 
-  public getActivityLogs(orgId: string, limit = 50): ActivityLog[] {
+  private getAllLogs(): ActivityLog[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.LOGS)
-      const logs: ActivityLog[] = raw ? JSON.parse(raw) : []
-      return logs.filter((l) => l.organization_id === orgId).slice(0, limit)
+      return raw ? JSON.parse(raw) : []
     } catch {
       return []
     }
+  }
+
+  public getActivityLogs(orgId: string, limit = 50): ActivityLog[] {
+    return this.getAllLogs()
+      .filter((l) => l.organization_id === orgId)
+      .slice(0, limit)
   }
 
   public async logActivity(
@@ -852,7 +883,7 @@ class StorageService {
     const mems = this.getAllMembers().filter((m) => !m.id.startsWith('demo-') && !m.organization_id.startsWith('demo-'))
     const acts = this.getAllActivities().filter((a) => !a.id.startsWith('demo-') && !a.organization_id.startsWith('demo-'))
     const tasks = this.getAllTasks().filter((t) => !t.id.startsWith('demo-') && !t.organization_id.startsWith('demo-'))
-    const logs = this.getActivityLogs('').filter((l) => !l.id.startsWith('demo-') && !l.organization_id.startsWith('demo-'))
+    const logs = this.getAllLogs().filter((l) => !l.id.startsWith('demo-') && !l.organization_id.startsWith('demo-'))
 
     localStorage.setItem(STORAGE_KEYS.ORGANIZATIONS, JSON.stringify(orgs))
     localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(mems))
@@ -879,7 +910,7 @@ class StorageService {
       members: this.getAllMembers(),
       activities: this.getAllActivities(),
       tasks: this.getAllTasks(),
-      activityLogs: this.getActivityLogs('', 1000),
+      activityLogs: this.getAllLogs().slice(0, 1000),
     }
     return JSON.stringify(backup, null, 2)
   }

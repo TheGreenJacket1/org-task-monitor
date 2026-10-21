@@ -65,15 +65,25 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <select
                   value={currentOrg?.id || ''}
                   onChange={(e) => {
-                    if (e.target.value === 'NEW') {
+                    const value = e.target.value
+                    if (value === 'NEW') {
                       onOpenOrgModal()
-                    } else {
-                      onSelectOrg(e.target.value)
+                      // Reset the select so the same option can trigger the modal again.
+                      e.target.value = currentOrg?.id || ''
+                    } else if (value) {
+                      onSelectOrg(value)
                     }
                   }}
                   className="pl-9 pr-8 py-1.5 text-sm font-semibold bg-slate-100 hover:bg-slate-200 border-none rounded-lg text-slate-800 cursor-pointer focus:ring-2 focus:ring-emerald-500 transition max-w-[180px] sm:max-w-[240px] truncate"
                   title="Pilih Organisasi"
                 >
+                  {!currentOrg && (
+                    <option value="" disabled>
+                      {organizations.length === 0
+                        ? '-- Belum ada organisasi --'
+                        : '-- Pilih organisasi --'}
+                    </option>
+                  )}
                   {organizations.map((org) => (
                     <option key={org.id} value={org.id}>
                       {org.name} ({org.code})
@@ -172,16 +182,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Primary Action: Tambah Tugas */}
             <button
               onClick={onOpenCreateTask}
-              disabled={!activeActivity}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition ${
-                activeActivity
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-              }`}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold shadow-sm transition bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200"
               title={
                 activeActivity
                   ? 'Buat Tugas Baru pada kegiatan aktif saat ini'
-                  : 'Aktifkan kegiatan terlebih dahulu untuk menambah tugas'
+                  : 'Anda akan diarahkan membuat/mengaktifkan kegiatan terlebih dahulu'
               }
             >
               <Plus className="w-4 h-4" />

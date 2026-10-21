@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   X,
   Building2,
@@ -39,6 +39,14 @@ export const OrganizationModal: React.FC<OrganizationModalProps> = ({
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState<ValidationError[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // With zero organizations the main task is creating the first one, so show
+  // the form immediately instead of hiding it behind another click.
+  useEffect(() => {
+    if (isOpen && organizations.length === 0) {
+      setShowAddForm(true)
+    }
+  }, [isOpen, organizations.length])
 
   if (!isOpen) return null
 

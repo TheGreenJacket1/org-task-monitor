@@ -156,6 +156,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (!organizationId) {
+      setErrors([
+        {
+          field: 'general',
+          message: 'Buat atau pilih organisasi terlebih dahulu sebelum menambah tugas.',
+        },
+      ])
+      return
+    }
+
+    if (!taskToEdit && !activityId) {
+      setErrors([
+        {
+          field: 'general',
+          message: 'Buat atau aktifkan kegiatan terlebih dahulu sebelum menambah tugas.',
+        },
+      ])
+      return
+    }
+
     const taskPayload: Partial<Task> = {
       organization_id: organizationId,
       activity_id: taskToEdit ? taskToEdit.activity_id : activityId,

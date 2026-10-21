@@ -82,6 +82,16 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (!organizationId) {
+      setErrors([
+        {
+          field: 'general',
+          message: 'Buat atau pilih organisasi terlebih dahulu sebelum menambah anggota.',
+        },
+      ])
+      return
+    }
+
     const payload = {
       organization_id: organizationId,
       name: name.trim(),

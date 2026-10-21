@@ -53,6 +53,27 @@ describe('DashboardView Component', () => {
 
     expect(screen.getByText('Belum Ada Kegiatan Aktif')).toBeInTheDocument()
   })
+
+  it('asks the user to create an organization when none exists', () => {
+    const onOpenOrgModal = vi.fn()
+
+    render(
+      <DashboardView
+        tasks={[]}
+        members={[]}
+        activeActivity={null}
+        hasOrganization={false}
+        onSelectTask={vi.fn()}
+        onNavigateToTasks={vi.fn()}
+        onOpenActivityModal={vi.fn()}
+        onOpenOrgModal={onOpenOrgModal}
+      />
+    )
+
+    expect(screen.getByText('Belum Ada Organisasi')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Buat Organisasi Baru'))
+    expect(onOpenOrgModal).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('TaskListView Component', () => {
@@ -116,5 +137,40 @@ describe('Navbar Component', () => {
     expect(screen.getByText('OrgTaskFlow')).toBeInTheDocument()
     expect(screen.getByText(/BEM Fakultas Teknologi Informasi/)).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument() // notification badge
+  })
+
+  it('allows opening organization management when there are no organizations', () => {
+    const onOpenOrgModal = vi.fn()
+
+    render(
+      <Navbar
+        organizations={[]}
+        currentOrg={null}
+        activeActivity={null}
+        syncStatus={{
+          mode: 'demo',
+          isConnected: false,
+          isSyncing: false,
+          lastSyncAt: null,
+        }}
+        notificationCount={0}
+        onSelectOrg={vi.fn()}
+        onOpenOrgModal={onOpenOrgModal}
+        onOpenActivityModal={vi.fn()}
+        onOpenNotifications={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onOpenCreateTask={vi.fn()}
+      />
+    )
+
+    const select = screen.getByTitle('Pilih Organisasi') as HTMLSelectElement
+    expect(select.value).toBe('')
+    expect(screen.getByText('-- Belum ada organisasi --')).toBeInTheDocument()
+
+    fireEvent.change(select, { target: { value: 'NEW' } })
+
+    expect(onOpenOrgModal).toHaveBeenCalledTimes(1)
+    // Reset so the same option can be selected again later.
+    expect(select.value).toBe('')
   })
 })

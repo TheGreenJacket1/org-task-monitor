@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   LayoutDashboard,
   CheckSquare,
@@ -85,13 +85,25 @@ export function App() {
     text: string
     type: 'success' | 'error' | 'info'
   } | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
+    // Cancel the previous timer so an older toast cannot dismiss a newer one.
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+    }
     setToastMessage({ text, type })
-    setTimeout(() => {
+    toastTimerRef.current = setTimeout(() => {
       setToastMessage(null)
+      toastTimerRef.current = null
     }, 3500)
   }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    }
+  }, [])
 
   // Load state from StorageService
   const refreshData = useCallback(() => {
@@ -153,6 +165,41 @@ export function App() {
     storageService.setCurrentOrgId(id)
     refreshData()
     showToast('Beralih ke organisasi terpilih.', 'info')
+  }
+
+  const handleOpenOrgModal = () => setIsOrgModalOpen(true)
+
+  const handleOpenActivityModal = () => {
+    if (!currentOrg) {
+      setIsOrgModalOpen(true)
+      showToast('Buat atau pilih organisasi terlebih dahulu sebelum menambah kegiatan.', 'info')
+      return
+    }
+    setIsActivityModalOpen(true)
+  }
+
+  const handleOpenMemberModal = () => {
+    if (!currentOrg) {
+      setIsOrgModalOpen(true)
+      showToast('Buat atau pilih organisasi terlebih dahulu sebelum menambah anggota.', 'info')
+      return
+    }
+    setIsMemberModalOpen(true)
+  }
+
+  const handleOpenCreateTask = () => {
+    if (!currentOrg) {
+      setIsOrgModalOpen(true)
+      showToast('Buat atau pilih organisasi terlebih dahulu sebelum menambah tugas.', 'info')
+      return
+    }
+    if (!activeActivity) {
+      setIsActivityModalOpen(true)
+      showToast('Buat atau aktifkan kegiatan terlebih dahulu untuk menambah tugas.', 'info')
+      return
+    }
+    setTaskToEdit(null)
+    setIsTaskModalOpen(true)
   }
 
   const handleSaveTask = async (taskData: Partial<Task>) => {
@@ -254,14 +301,11 @@ export function App() {
         syncStatus={syncStatus}
         notificationCount={notificationCount}
         onSelectOrg={handleSelectOrg}
-        onOpenOrgModal={() => setIsOrgModalOpen(true)}
-        onOpenActivityModal={() => setIsActivityModalOpen(true)}
+        onOpenOrgModal={handleOpenOrgModal}
+        onOpenActivityModal={handleOpenActivityModal}
         onOpenNotifications={() => setIsNotificationOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenCreateTask={() => {
-          setTaskToEdit(null)
-          setIsTaskModalOpen(true)
-        }}
+        onOpenCreateTask={handleOpenCreateTask}
       />
 
       {/* Demo Mode Notice Banner if viewing demo organization */}
@@ -306,7 +350,7 @@ export function App() {
           </button>
 
           <button
-            onClick={() => setIsActivityModalOpen(true)}
+            onClick={handleOpenActivityModal}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 transition whitespace-nowrap"
           >
             <Calendar className="w-4 h-4" />
@@ -314,7 +358,7 @@ export function App() {
           </button>
 
           <button
-            onClick={() => setIsMemberModalOpen(true)}
+            onClick={handleOpenMemberModal}
             className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 transition whitespace-nowrap"
           >
             <Users className="w-4 h-4" />
@@ -340,12 +384,14 @@ export function App() {
             tasks={tasks}
             members={members}
             activeActivity={activeActivity}
+            hasOrganization={!!currentOrg}
             onSelectTask={(task) => {
               setSelectedTask(task)
               setIsDetailModalOpen(true)
             }}
             onNavigateToTasks={() => setActiveTab('tasks')}
-            onOpenActivityModal={() => setIsActivityModalOpen(true)}
+            onOpenActivityModal={handleOpenActivityModal}
+            onOpenOrgModal={handleOpenOrgModal}
           />
         )}
 
@@ -364,10 +410,7 @@ export function App() {
             onArchiveTask={handleArchiveTask}
             onUnarchiveTask={handleUnarchiveTask}
             onDeleteTask={handleDeleteTask}
-            onOpenCreateTask={() => {
-              setTaskToEdit(null)
-              setIsTaskModalOpen(true)
-            }}
+            onOpenCreateTask={handleOpenCreateTask}
           />
         )}
 

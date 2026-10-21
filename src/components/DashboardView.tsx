@@ -30,9 +30,11 @@ interface DashboardViewProps {
   tasks: Task[]
   members: Member[]
   activeActivity: Activity | null
+  hasOrganization?: boolean
   onSelectTask: (task: Task) => void
   onNavigateToTasks: () => void
   onOpenActivityModal: () => void
+  onOpenOrgModal?: () => void
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -46,11 +48,37 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   tasks,
   members,
   activeActivity,
+  hasOrganization = true,
   onSelectTask,
   onNavigateToTasks,
   onOpenActivityModal,
+  onOpenOrgModal,
 }) => {
-  // If no active activity
+  // If there is no organization yet, all data views are empty by design.
+  if (!hasOrganization) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-xl mx-auto my-12 shadow-sm">
+        <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <Calendar className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Belum Ada Organisasi</h2>
+        <p className="text-slate-600 mt-2 text-sm leading-relaxed">
+          Buat organisasi terlebih dahulu. Setelah itu Anda dapat menambahkan kegiatan, anggota/PIC,
+          tugas, dan melihat riwayat aktivitas.
+        </p>
+        {onOpenOrgModal && (
+          <button
+            onClick={onOpenOrgModal}
+            className="mt-6 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-xl shadow-sm transition"
+          >
+            Buat Organisasi Baru
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // If there is an organization but no active activity
   if (!activeActivity) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center max-w-xl mx-auto my-12 shadow-sm">

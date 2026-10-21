@@ -49,6 +49,16 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (!organizationId) {
+      setErrors([
+        {
+          field: 'general',
+          message: 'Buat atau pilih organisasi terlebih dahulu sebelum menambah kegiatan.',
+        },
+      ])
+      return
+    }
+
     const payload = {
       organization_id: organizationId,
       name: name.trim(),
