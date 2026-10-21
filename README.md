@@ -97,6 +97,26 @@ Skema SQL lengkap dengan tabel relasional, foreign keys, constraints, triggers, 
 > Proyek gratis Supabase akan dijeda secara otomatis jika tidak menerima kueri selama **7 hari berturut-turut**.
 > **Solusi:** Lakukan ekspor file JSON cadangan secara berkala melalui menu Pengaturan aplikasi agar data kepanitiaan Anda tetap aman dan dapat dipulihkan sewaktu-waktu.
 
+### Migrasi Update (Jalankan jika memperbarui dari versi lama)
+
+Jika Anda memperbarui dari versi sebelumnya, jalankan migrasi tambahan ini **sebelum** deploy frontend baru:
+
+1. Buka **SQL Editor** Supabase.
+2. Jalankan file `supabase/migrations/20261021000000_add_soft_delete_and_activity_members.sql`.
+3. Verifikasi dengan query:
+   ```sql
+   SELECT 'organizations', count(*) FROM organizations
+   UNION ALL SELECT 'members', count(*) FROM members
+   UNION ALL SELECT 'activities', count(*) FROM activities
+   UNION ALL SELECT 'tasks', count(*) FROM tasks
+   UNION ALL SELECT 'activity_logs', count(*) FROM activity_logs
+   UNION ALL SELECT 'activity_members', count(*) FROM activity_members;
+   ```
+4. (Opsional, nanti) Jalankan `supabase/migrations/20261022000000_drop_single_active_activity_rule.sql` setelah UI multi-kegiatan aktif siap.
+
+> [!NOTE]
+> Jangan jalankan `DELETE`, `TRUNCATE`, atau `DROP TABLE` pada data pengguna. Migrasi hanya menambah kolom/tabel.
+
 ---
 
 ## 4. Panduan Deployment ke GitHub Pages

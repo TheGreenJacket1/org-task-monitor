@@ -9,6 +9,7 @@ import {
   Sparkles,
   RefreshCw,
   Plus,
+  Trash2,
 } from 'lucide-react'
 import {
   Organization,
@@ -34,6 +35,11 @@ import { NotificationModal } from './components/NotificationModal'
 import { SettingsModal } from './components/SettingsModal'
 import { ConfirmModal } from './components/ConfirmModal'
 import { ActivityLogView } from './components/ActivityLogView'
+import { TrashModal } from './components/TrashModal'
+import { ActivitySelector } from './components/ActivitySelector'
+import { BottomNav } from './components/BottomNav'
+import { CommandPalette } from './components/CommandPalette'
+import { QuickAddTaskModal } from './components/QuickAddTaskModal'
 
 type TabType = 'dashboard' | 'tasks' | 'activities' | 'members' | 'logs'
 
@@ -45,8 +51,14 @@ export function App() {
   const [currentOrgId, setCurrentOrgId] = useState<string>('')
   const [members, setMembers] = useState<Member[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
+  const [activityTaskCounts, setActivityTaskCounts] = useState<Record<string, number>>({})
   const [logs, setLogs] = useState<ActivityLog[]>([])
+  const [deletedTasks, setDeletedTasks] = useState<Task[]>([])
+  const [deletedActivities, setDeletedActivities] = useState<Activity[]>([])
+  const [deletedMembers, setDeletedMembers] = useState<Member[]>([])
+  const [deletedLogs, setDeletedLogs] = useState<ActivityLog[]>([])
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     mode: 'demo',
     isConnected: false,
@@ -66,12 +78,17 @@ export function App() {
   const [isOrgModalOpen, setIsOrgModalOpen] = useState(false)
   const [isNotificationOpen, setIsNotificationOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isTrashOpen, setIsTrashOpen] = useState(false)
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
 
   // Confirm delete modal state
   const [confirmConfig, setConfirmConfig] = useState<{
     isOpen: boolean
     title: string
     message: string
+    impactSummary?: string[]
+    requireTypedText?: string
     action: () => void
   }>({
     isOpen: false,
@@ -84,19 +101,25 @@ export function App() {
   const [toastMessage, setToastMessage] = useState<{
     text: string
     type: 'success' | 'error' | 'info'
+    action?: { label: string; onClick: () => void }
+    duration?: number
   } | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
-    // Cancel the previous timer so an older toast cannot dismiss a newer one.
+  const showToast = (
+    text: string,
+    type: 'success' | 'error' | 'info' = 'success',
+    options?: { action?: { label: string; onClick: () => void }; duration?: number }
+  ) => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current)
     }
-    setToastMessage({ text, type })
+    const duration = options?.duration ?? (options?.action ? 8000 : 3500)
+    setToastMessage({ text, type, action: options?.action, duration })
     toastTimerRef.current = setTimeout(() => {
       setToastMessage(null)
       toastTimerRef.current = null
-    }, 3500)
+    }, duration)
   }
 
   useEffect(() => {
@@ -114,16 +137,57 @@ export function App() {
     setCurrentOrgId(curId)
 
     if (curId) {
-      setMembers(storageService.getMembers(curId))
-      setActivities(storageService.getActivities(curId))
-      setTasks(storageService.getTasks(curId, undefined, true))
+      const acts = storageService.getActivities(curId)
+      setActivities(acts)
+      const sel = storageService.getSelectedActivity(curId)
+      setSelectedActivity(sel)
+      // Persist fallback selection if nothing stored yet.
+      if (!storageService.getSelectedActivityId(curId) && sel) {
+        storageService.setSelectedActivityId(curId, sel.id)
+      }
+      const orgTasks = storageService.getTasks(curId, undefined, true, { includeTasksOfDeletedActivities: false })
+      const counts: Record<string, number> = {}
+      for (const t of orgTasks) {
+        counts[t.activity_id] = (counts[t.activity_id] ?? 0) + 1
+      }
+      setActivityTaskCounts(counts)
+      setMembers(sel ? storageService.getActivityMembers(sel.id) : storageService.getMembers(curId))
+      setTasks(storageService.getTasks(curId, sel?.id, true))
       setLogs(storageService.getActivityLogs(curId, 100))
+      setDeletedTasks(storageService.getDeletedTasks(curId))
+      setDeletedActivities(storageService.getDeletedActivities(curId))
+      setDeletedMembers(storageService.getDeletedMembers(curId))
+      setDeletedLogs(storageService.getDeletedLogs(curId, 200))
     } else {
       setMembers([])
       setActivities([])
+      setSelectedActivity(null)
       setTasks([])
       setLogs([])
+      setActivityTaskCounts({})
+      setDeletedTasks([])
+      setDeletedActivities([])
+      setDeletedMembers([])
+      setDeletedLogs([])
     }
+  }, [])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setIsCommandPaletteOpen(true)
+        return
+      }
+      const target = e.target as HTMLElement | null
+      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      if (!typing && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault()
+        setIsQuickAddOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   useEffect(() => {
@@ -144,7 +208,7 @@ export function App() {
   }, [refreshData])
 
   const currentOrg = organizations.find((o) => o.id === currentOrgId) || null
-  const activeActivity = activities.find((a) => a.is_active && !a.is_archived) || null
+  // activeActivity concept replaced by selectedActivity (Phase 2)
 
   // Calculate unread notification count
   const notificationCount = tasks.filter((t) => {
@@ -165,6 +229,14 @@ export function App() {
     storageService.setCurrentOrgId(id)
     refreshData()
     showToast('Beralih ke organisasi terpilih.', 'info')
+  }
+
+  const handleSelectActivity = (id: string) => {
+    if (!currentOrgId) return
+    storageService.setSelectedActivityId(currentOrgId, id)
+    refreshData()
+    const act = storageService.getActivities(currentOrgId).find((a) => a.id === id)
+    showToast(`Menampilkan kegiatan "${act?.name ?? ''}".`, 'info')
   }
 
   const handleOpenOrgModal = () => setIsOrgModalOpen(true)
@@ -193,7 +265,7 @@ export function App() {
       showToast('Buat atau pilih organisasi terlebih dahulu sebelum menambah tugas.', 'info')
       return
     }
-    if (!activeActivity) {
+    if (!selectedActivity) {
       setIsActivityModalOpen(true)
       showToast('Buat atau aktifkan kegiatan terlebih dahulu untuk menambah tugas.', 'info')
       return
@@ -246,18 +318,70 @@ export function App() {
   }
 
   const handleDeleteTask = (taskId: string) => {
+    const task = storageService.getTasks(currentOrgId, undefined, true, { includeDeleted: true }).find((t) => t.id === taskId)
     setConfirmConfig({
       isOpen: true,
-      title: 'Hapus Tugas',
-      message: 'Apakah Anda yakin ingin menghapus tugas ini? Tindakan ini tidak dapat dibatalkan.',
+      title: 'Pindahkan Tugas ke Tempat Sampah',
+      message: 'Tugas akan dipindahkan ke Tempat Sampah. Anda dapat memulihkannya nanti.',
+      impactSummary: task ? [`Tugas: ${task.title}`] : undefined,
       action: async () => {
-        await storageService.deleteTask(taskId)
+        await storageService.softDeleteTask(taskId)
         refreshData()
         setIsDetailModalOpen(false)
         setConfirmConfig((prev) => ({ ...prev, isOpen: false }))
-        showToast('Tugas telah dihapus.')
+        showToast('Tugas dipindahkan ke Tempat Sampah.', 'info', {
+          action: {
+            label: 'Urungkan',
+            onClick: async () => {
+              await storageService.restoreTask(taskId)
+              refreshData()
+              showToast('Penghapusan dibatalkan.')
+            },
+          },
+        })
       },
     })
+  }
+
+  const handleRestoreTask = async (taskId: string) => {
+    await storageService.restoreTask(taskId)
+    refreshData()
+    showToast('Tugas dipulihkan.')
+  }
+  const handlePermanentDeleteTask = async (taskId: string) => {
+    await storageService.permanentlyDeleteTask(taskId)
+    refreshData()
+    showToast('Tugas dihapus permanen.')
+  }
+  const handleRestoreActivity = async (activityId: string) => {
+    await storageService.restoreActivity(currentOrgId, activityId)
+    refreshData()
+    showToast('Kegiatan dipulihkan.')
+  }
+  const handlePermanentDeleteActivity = async (activityId: string) => {
+    await storageService.permanentlyDeleteActivity(currentOrgId, activityId)
+    refreshData()
+    showToast('Kegiatan dihapus permanen.')
+  }
+  const handleRestoreMember = async (memberId: string) => {
+    await storageService.restoreMember(memberId)
+    refreshData()
+    showToast('Anggota dipulihkan.')
+  }
+  const handlePermanentDeleteMember = async (memberId: string) => {
+    await storageService.permanentlyDeleteMember(memberId)
+    refreshData()
+    showToast('Anggota dihapus permanen.')
+  }
+  const handleRestoreLog = async (logId: string) => {
+    await storageService.restoreLog(logId)
+    refreshData()
+    showToast('Riwayat dipulihkan.')
+  }
+  const handlePermanentDeleteLog = async (logId: string) => {
+    await storageService.permanentlyDeleteLog(logId)
+    refreshData()
+    showToast('Riwayat dihapus permanen.')
   }
 
   const handleExportData = () => {
@@ -297,7 +421,7 @@ export function App() {
       <Navbar
         organizations={organizations}
         currentOrg={currentOrg}
-        activeActivity={activeActivity}
+        activeActivity={selectedActivity}
         syncStatus={syncStatus}
         notificationCount={notificationCount}
         onSelectOrg={handleSelectOrg}
@@ -321,8 +445,26 @@ export function App() {
         </div>
       )}
 
+      {/* Activity selector sub-header */}
+      {currentOrg && (
+        <div className="sticky top-16 z-30 bg-white border-b border-slate-200 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex items-center justify-between gap-3">
+            <ActivitySelector
+              activities={activities}
+              selectedActivityId={selectedActivity?.id || ''}
+              taskCounts={activityTaskCounts}
+              onSelect={handleSelectActivity}
+              onManage={handleOpenActivityModal}
+            />
+            <span className="text-xs text-slate-500 hidden sm:inline">
+              {selectedActivity ? `${selectedActivity.name} dipilih` : 'Belum ada kegiatan terpilih'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
         {/* Navigation Tabs Bar */}
         <div className="flex items-center gap-1.5 sm:gap-2 mb-6 overflow-x-auto pb-1 border-b border-slate-200">
           <button
@@ -376,6 +518,14 @@ export function App() {
             <History className="w-4 h-4" />
             Riwayat Aktivitas ({logs.length})
           </button>
+
+          <button
+            onClick={() => setIsTrashOpen(true)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 transition whitespace-nowrap"
+          >
+            <Trash2 className="w-4 h-4" />
+            Tempat Sampah ({deletedTasks.length + deletedActivities.length + deletedMembers.length + deletedLogs.length})
+          </button>
         </div>
 
         {/* Tab Content Rendering */}
@@ -383,7 +533,7 @@ export function App() {
           <DashboardView
             tasks={tasks}
             members={members}
-            activeActivity={activeActivity}
+            activeActivity={selectedActivity}
             hasOrganization={!!currentOrg}
             onSelectTask={(task) => {
               setSelectedTask(task)
@@ -425,6 +575,49 @@ export function App() {
         </div>
       </footer>
 
+      {/* Quick Add Task (Expert Mode) */}
+      <QuickAddTaskModal
+        isOpen={isQuickAddOpen}
+        activityId={selectedActivity?.id || ''}
+        organizationId={currentOrgId}
+        members={members}
+        onClose={() => setIsQuickAddOpen(false)}
+        onSave={handleSaveTask}
+      />
+
+      {/* Command Palette (Expert Mode) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        commands={[
+          { id: 'new-task', label: 'Tugas baru', hint: 'N', run: handleOpenCreateTask },
+          { id: 'switch-activity', label: 'Kelola / ganti kegiatan', run: handleOpenActivityModal },
+          { id: 'org', label: 'Kelola organisasi', run: handleOpenOrgModal },
+          { id: 'members', label: 'Kelola anggota', run: handleOpenMemberModal },
+          { id: 'trash', label: 'Buka tempat sampah', run: () => setIsTrashOpen(true) },
+          { id: 'export', label: 'Ekspor cadangan JSON', run: handleExportData },
+          { id: 'dashboard', label: 'Tab Dashboard', run: () => setActiveTab('dashboard') },
+          { id: 'tasks', label: 'Tab Daftar Tugas', run: () => setActiveTab('tasks') },
+          { id: 'logs', label: 'Tab Riwayat', run: () => setActiveTab('logs') },
+          ...activities
+            .filter((a) => !a.is_archived && !a.deleted_at)
+            .map((a) => ({
+              id: `act-${a.id}`,
+              label: `Tampilkan kegiatan: ${a.name}`,
+              run: () => handleSelectActivity(a.id),
+            })),
+        ]}
+      />
+
+      {/* Bottom Nav (mobile) */}
+      <BottomNav
+        activeTab={activeTab === 'activities' || activeTab === 'members' ? 'dashboard' : (activeTab as 'dashboard' | 'tasks' | 'logs')}
+        onNavigate={setActiveTab}
+        onOpenActivities={handleOpenActivityModal}
+        onOpenMembers={handleOpenMemberModal}
+        onOpenTrash={() => setIsTrashOpen(true)}
+      />
+
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-slide-up">
@@ -438,6 +631,18 @@ export function App() {
             }`}
           />
           {toastMessage.text}
+          {toastMessage.action && (
+            <button
+              onClick={() => {
+                toastMessage.action!.onClick()
+                if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+                setToastMessage(null)
+              }}
+              className="ml-2 px-2.5 py-1 rounded-lg bg-white/20 hover:bg-white/30 text-white font-bold"
+            >
+              {toastMessage.action.label}
+            </button>
+          )}
         </div>
       )}
 
@@ -446,7 +651,7 @@ export function App() {
       <TaskModal
         isOpen={isTaskModalOpen}
         taskToEdit={taskToEdit}
-        activityId={activeActivity?.id || ''}
+        activityId={selectedActivity?.id || ''}
         organizationId={currentOrgId}
         members={members}
         onClose={() => {
@@ -502,16 +707,42 @@ export function App() {
           refreshData()
           showToast('Arsip kegiatan telah dibuka kembali.')
         }}
+        onDeleteActivity={(id) => {
+          const act = activities.find((a) => a.id === id)
+          const impact = storageService.getActivityImpact(id)
+          setConfirmConfig({
+            isOpen: true,
+            title: 'Pindahkan Kegiatan ke Tempat Sampah',
+            message: `Kegiatan "${act?.name}" akan dipindahkan ke Tempat Sampah.`,
+            impactSummary: [
+              `Tugas: ${impact.tasks}`,
+              `Anggota terdaftar: ${impact.members}`,
+              `Riwayat: ${impact.logs}`,
+            ],
+            requireTypedText: act?.name,
+            action: async () => {
+              await storageService.softDeleteActivity(currentOrgId, id)
+              refreshData()
+              setConfirmConfig((prev) => ({ ...prev, isOpen: false }))
+              showToast('Kegiatan dipindahkan ke Tempat Sampah.')
+            },
+          })
+        }}
       />
 
       {/* Member Management Modal */}
       <MemberManagementModal
         isOpen={isMemberModalOpen}
         organizationId={currentOrgId}
+        activityId={selectedActivity?.id}
         members={members}
+        allMembers={storageService.getMembers(currentOrgId, false, { includeDeleted: false })}
         onClose={() => setIsMemberModalOpen(false)}
         onCreateMember={async (data) => {
-          await storageService.createMember(data)
+          const newMember = await storageService.createMember(data)
+          if (selectedActivity) {
+            storageService.addMemberToActivity(selectedActivity.id, newMember.id)
+          }
           refreshData()
           showToast('Anggota baru berhasil ditambahkan!')
         }}
@@ -524,6 +755,22 @@ export function App() {
           await storageService.deleteMember(id)
           refreshData()
           showToast('Anggota berhasil dihapus.')
+        }}
+        onAddMemberToActivity={async (memberId) => {
+          if (!selectedActivity) return
+          storageService.addMemberToActivity(selectedActivity.id, memberId)
+          refreshData()
+          showToast('Anggota ditambahkan ke kegiatan.')
+        }}
+        onRemoveMemberFromActivity={async (memberId) => {
+          if (!selectedActivity) return
+          try {
+            storageService.removeMemberFromActivity(selectedActivity.id, memberId)
+            refreshData()
+            showToast('Anggota dilepas dari kegiatan.')
+          } catch (e: any) {
+            showToast(e?.message || 'Gagal melepas anggota.', 'error')
+          }
         }}
       />
 
@@ -591,9 +838,31 @@ export function App() {
         isOpen={confirmConfig.isOpen}
         title={confirmConfig.title}
         message={confirmConfig.message}
+        impactSummary={confirmConfig.impactSummary}
+        requireTypedText={confirmConfig.requireTypedText}
         isDestructive={true}
         onConfirm={confirmConfig.action}
         onCancel={() => setConfirmConfig((prev) => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Trash Modal */}
+      <TrashModal
+        isOpen={isTrashOpen}
+        onClose={() => setIsTrashOpen(false)}
+        deletedTasks={deletedTasks}
+        deletedActivities={deletedActivities}
+        deletedMembers={deletedMembers}
+        deletedLogs={deletedLogs}
+        members={members}
+        activities={activities}
+        onRestoreTask={handleRestoreTask}
+        onRestoreActivity={handleRestoreActivity}
+        onRestoreMember={handleRestoreMember}
+        onRestoreLog={handleRestoreLog}
+        onPermanentDeleteTask={handlePermanentDeleteTask}
+        onPermanentDeleteActivity={handlePermanentDeleteActivity}
+        onPermanentDeleteMember={handlePermanentDeleteMember}
+        onPermanentDeleteLog={handlePermanentDeleteLog}
       />
     </div>
   )

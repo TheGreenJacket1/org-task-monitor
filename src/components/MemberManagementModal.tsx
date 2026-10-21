@@ -16,11 +16,15 @@ import { validateMember, ValidationError } from '../utils/validation'
 interface MemberManagementModalProps {
   isOpen: boolean
   organizationId: string
-  members: Member[]
+  activityId?: string
+  members: Member[] // members of the selected activity
+  allMembers: Member[] // all members of the organization
   onClose: () => void
   onCreateMember: (memberData: Omit<Member, 'id' | 'created_at'>) => Promise<void>
   onUpdateMember: (id: string, patch: Partial<Member>) => Promise<void>
   onDeleteMember: (id: string) => Promise<void>
+  onAddMemberToActivity?: (memberId: string) => void
+  onRemoveMemberFromActivity?: (memberId: string) => void
 }
 
 const AVATAR_COLORS = [
@@ -37,13 +41,18 @@ const AVATAR_COLORS = [
 export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   isOpen,
   organizationId,
+  activityId,
   members,
+  allMembers,
   onClose,
   onCreateMember,
   onUpdateMember,
   onDeleteMember,
+  onAddMemberToActivity,
+  onRemoveMemberFromActivity,
 }) => {
   const [showAddForm, setShowAddForm] = useState(false)
+  const [tab, setTab] = useState<'activity' | 'all'>('activity')
   const [editingMember, setEditingMember] = useState<Member | null>(null)
   const [name, setName] = useState('')
   const [role, setRole] = useState('')
@@ -311,14 +320,32 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
             </form>
           )}
 
+          {/* Tab switcher */}
+          <div className="flex gap-2 border-b border-slate-200 pb-2">
+            <button
+              onClick={() => setTab('activity')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${tab === 'activity' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}
+            >
+              Anggota Kegiatan Ini ({members.length})
+            </button>
+            <button
+              onClick={() => setTab('all')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${tab === 'all' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}
+            >
+              Semua Anggota Organisasi ({allMembers.length})
+            </button>
+          </div>
+
           {/* Members List */}
           <div className="space-y-2">
-            {members.length === 0 ? (
+            {(tab === 'activity' ? members : allMembers).length === 0 ? (
               <div className="text-center py-8 text-slate-400 text-xs bg-slate-50 rounded-xl">
                 Belum ada anggota. Tambahkan anggota untuk dapat menugaskan tugas.
               </div>
             ) : (
-              members.map((member) => (
+              (tab === 'activity' ? members : allMembers).map((member) => {
+                const inActivity = members.some((m) => m.id === member.id)
+                return (
                 <div
                   key={member.id}
                   className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 transition ${
@@ -360,6 +387,25 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {activityId && onAddMemberToActivity && onRemoveMemberFromActivity && (
+                      inActivity ? (
+                        <button
+                          onClick={() => onRemoveMemberFromActivity(member.id)}
+                          className="p-1.5 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition"
+                          title="Lepas dari kegiatan ini"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onAddMemberToActivity(member.id)}
+                          className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                          title="Tambahkan ke kegiatan ini"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                        </button>
+                      )
+                    )}
                     <button
                       onClick={() => handleStartEdit(member)}
                       className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
@@ -376,8 +422,9 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
                     </button>
                   </div>
                 </div>
-              ))
-            )}
+              )
+            })
+          )}
           </div>
         </div>
 

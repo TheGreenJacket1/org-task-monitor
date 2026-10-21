@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Archive,
   FolderArchive,
+  Trash2,
   AlertCircle,
   Clock,
   Radio,
@@ -23,6 +24,7 @@ interface ActivityManagementModalProps {
   onSetActiveActivity: (activityId: string) => Promise<void>
   onArchiveActivity: (activityId: string) => Promise<void>
   onUnarchiveActivity: (activityId: string) => Promise<void>
+  onDeleteActivity?: (activityId: string) => void
 }
 
 export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = ({
@@ -34,6 +36,7 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
   onSetActiveActivity,
   onArchiveActivity,
   onUnarchiveActivity,
+  onDeleteActivity,
 }) => {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [name, setName] = useState('')
@@ -323,6 +326,16 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
                             Arsipkan
                           </button>
                         )
+                      )}
+                      {onDeleteActivity && (
+                        <button
+                          onClick={() => onDeleteActivity(act.id)}
+                          className="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition flex items-center gap-1"
+                          title="Pindahkan ke tempat sampah"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Hapus
+                        </button>
                       )}
                     </div>
                   </div>
