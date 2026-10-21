@@ -35,9 +35,9 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   const canConfirm = requireTypedText ? typed.trim() === requireTypedText.trim() : true
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden transform transition-all">
-        <div className="p-6">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
+      <div className="modal-sheet bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden transform transition-all">
+        <div className="modal-sheet-body p-6 max-h-[75vh] overflow-y-auto">
           <div className="flex items-start gap-4">
             <div
               className={`p-3 rounded-full shrink-0 ${
@@ -71,14 +71,15 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             </div>
             <button
               onClick={onCancel}
-              className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              className="flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition shrink-0"
+              title="Batal"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100">
+        <div className="modal-sheet-footer bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100">
           <button
             type="button"
             onClick={onCancel}

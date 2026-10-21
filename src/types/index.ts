@@ -67,6 +67,7 @@ export interface Task {
   created_at: string
   updated_at: string
   deleted_at?: string | null
+  sort_order?: number
 }
 
 export interface ActivityLog {
@@ -150,6 +151,18 @@ export interface BackupDataV2 {
     activityMembers: number
   }
   lastSyncAt: string | null
+}
+
+export interface TaskTemplate {
+  id: string
+  name: string
+  description: string
+  category: TaskCategory
+  phase: TaskPhase
+  priority: TaskPriority
+  default_pic_id?: string
+  default_duration_days: number
+  created_at: string
 }
 
 export interface StorageHealth {

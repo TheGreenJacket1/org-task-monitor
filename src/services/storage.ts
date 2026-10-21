@@ -5,6 +5,7 @@ import {
   Task,
   ActivityLog,
   ActivityMember,
+  TaskTemplate,
   SyncStatus,
 } from '../types'
 import {
@@ -139,7 +140,7 @@ class StorageService {
 
     try {
       // Test query to organizations
-      const { data, error } = await supabase.from('organizations').select('id').limit(1)
+      const { error } = await supabase.from('organizations').select('id').limit(1)
       if (error) {
         throw error
       }
@@ -209,7 +210,7 @@ class StorageService {
 
   private pullGeneration = 0
 
-  public async pullFromSupabase(options?: { force?: boolean }): Promise<boolean> {
+  public async pullFromSupabase(_options?: { force?: boolean }): Promise<boolean> {
     const supabase = getSupabaseClient()
     if (!supabase) return false
 
@@ -663,6 +664,143 @@ class StorageService {
     return true
   }
 
+  // --- Urutan manual (drag & drop) ---
+  public reorderTasks(activityId: string, orderedIds: string[]): boolean {
+    const all = this.getAllTasks()
+    const activityTasks = all.filter((t) => t.activity_id === activityId)
+    const known = new Set(activityTasks.map((t) => t.id))
+    // Only ids that actually belong to this activity are considered.
+    const targetOrder = orderedIds.filter((id) => known.has(id))
+    if (targetOrder.length === 0) return false
+
+    // Current order: by sort_order when available, otherwise by array position.
+    const currentOrder = activityTasks
+      .map((t, i) => ({ id: t.id, sort: typeof t.sort_order === 'number' ? t.sort_order : i, i }))
+      .sort((a, b) => (a.sort === b.sort ? a.i - b.i : a.sort - b.sort))
+      .map((x) => x.id)
+
+    const sameLength = currentOrder.length === targetOrder.length
+    const unchanged = sameLength && currentOrder.every((id, i) => id === targetOrder[i])
+    if (unchanged) return false
+
+    const index = new Map(targetOrder.map((id, i) => [id, i]))
+    for (const t of all) {
+      if (t.activity_id !== activityId) continue
+      const next = index.get(t.id)
+      if (next === undefined) continue
+      t.sort_order = next
+      t.updated_at = new Date().toISOString()
+    }
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(all))
+    this.notifyDataChange()
+    return true
+  }
+
+  // --- Bulk create (CSV import & template batch) ---
+  public async bulkCreateTasks(
+    items: Array<Partial<Task> & { title: string }>,
+    actorName = 'Pengguna'
+  ): Promise<{ created: number; failed: number; errors: string[] }> {
+    const errors: string[] = []
+    let created = 0
+    const all = this.getAllTasks()
+    for (const item of items) {
+      try {
+        if (!item.title || !item.title.trim()) {
+          errors.push('Judul tugas kosong, dilewati.')
+          continue
+        }
+        if (!item.activity_id) {
+          errors.push(`Tugas "${item.title}" tidak punya kegiatan, dilewati.`)
+          continue
+        }
+        const now = new Date().toISOString()
+        const task: Task = {
+          ...(item as Task),
+          id: crypto.randomUUID ? crypto.randomUUID() : 'task-' + Date.now() + '-' + Math.random().toString(16).slice(2),
+          title: item.title.trim(),
+          description: item.description ?? '',
+          category: item.category ?? 'Lainnya',
+          phase: item.phase ?? 'Pra-acara',
+          priority: item.priority ?? 'Sedang',
+          pic_id: item.pic_id ?? '',
+          start_date: item.start_date ?? now.slice(0, 10),
+          deadline: item.deadline ?? now.slice(0, 10),
+          status: item.status ?? 'Belum dikerjakan',
+          progress: item.progress ?? 0,
+          review_status: item.review_status ?? 'Belum diajukan',
+          revision_notes: item.revision_notes ?? '',
+          reference_links: item.reference_links ?? [],
+          result_links: item.result_links ?? [],
+          completed_at: null,
+          is_archived: false,
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+          sort_order: all.length,
+        }
+        all.unshift(task)
+        created++
+        await this.logActivity(task.organization_id, task.activity_id, task.id, actorName, 'TUGAS_DIBUAT', `Membuat tugas "${task.title}" (bulk import).`)
+      } catch (e: any) {
+        errors.push(`Gagal menyimpan "${item.title}": ${e?.message ?? 'error'}`)
+      }
+    }
+    if (created > 0) {
+      localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(all))
+      this.notifyDataChange()
+    }
+    return { created, failed: errors.length, errors }
+  }
+
+  // --- Task templates ---
+  private getAllTemplates(): TaskTemplate[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.TEMPLATES)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+
+  public getTaskTemplates(): TaskTemplate[] {
+    return this.getAllTemplates()
+  }
+
+  public saveTaskTemplate(template: Omit<TaskTemplate, 'id' | 'created_at'> & { id?: string }): TaskTemplate {
+    const all = this.getAllTemplates()
+    const now = new Date().toISOString()
+    if (template.id) {
+      const idx = all.findIndex((t) => t.id === template.id)
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], ...template, id: template.id, created_at: all[idx].created_at } as TaskTemplate
+        localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(all))
+        this.notifyDataChange()
+        return all[idx]
+      }
+    }
+    const created: TaskTemplate = {
+      ...template,
+      id: crypto.randomUUID ? crypto.randomUUID() : 'tpl-' + Date.now(),
+      created_at: now,
+    }
+    all.push(created)
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(all))
+    this.notifyDataChange()
+    return created
+  }
+
+  public deleteTaskTemplate(id: string): boolean {
+    const all = this.getAllTemplates()
+    const next = all.filter((t) => t.id !== id)
+    if (next.length === all.length) return false
+    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(next))
+    this.notifyDataChange()
+    return true
+  }
+
   // --- Soft delete / restore / permanent delete (Phase 1B) ---
 
   public async softDeleteTask(id: string, actorName = 'Pengguna'): Promise<boolean> {
@@ -791,7 +929,7 @@ class StorageService {
     return true
   }
 
-  public async softDeleteLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+  public async softDeleteLog(id: string, _actorName = 'Pengguna'): Promise<boolean> {
     const all = this.getAllLogs()
     const log = all.find((l) => l.id === id)
     if (!log || log.deleted_at) return false
@@ -801,7 +939,7 @@ class StorageService {
     return true
   }
 
-  public async restoreLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+  public async restoreLog(id: string, _actorName = 'Pengguna'): Promise<boolean> {
     const all = this.getAllLogs()
     const log = all.find((l) => l.id === id)
     if (!log || !log.deleted_at) return false
@@ -821,7 +959,7 @@ class StorageService {
     return true
   }
 
-  public async archiveLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+  public async archiveLog(id: string, _actorName = 'Pengguna'): Promise<boolean> {
     const all = this.getAllLogs()
     const log = all.find((l) => l.id === id)
     if (!log) return false
@@ -831,7 +969,7 @@ class StorageService {
     return true
   }
 
-  public async unarchiveLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+  public async unarchiveLog(id: string, _actorName = 'Pengguna'): Promise<boolean> {
     const all = this.getAllLogs()
     const log = all.find((l) => l.id === id)
     if (!log) return false
@@ -1010,6 +1148,30 @@ class StorageService {
     return true
   }
 
+  public async updateActivity(orgId: string, activityId: string, patch: Partial<Activity>): Promise<Activity | null> {
+    const all = this.getAllActivities()
+    const idx = all.findIndex((a) => a.id === activityId && a.organization_id === orgId)
+    if (idx === -1) return null
+    const updated: Activity = { ...all[idx], ...patch, updated_at: new Date().toISOString() }
+    all[idx] = updated
+    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(all))
+
+    const supabase = getSupabaseClient()
+    if (supabase) {
+      try {
+        const { error } = await supabase.from('activities').update(updated).eq('id', activityId)
+        if (error) throw error
+      } catch (e: any) {
+        console.warn('Gagal update kegiatan di Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal update kegiatan di Supabase' })
+      }
+    }
+
+    await this.logActivity(orgId, activityId, undefined, 'Sistem', 'KEGIATAN_DIPERBARUI', `Memperbarui kegiatan "${updated.name}".`)
+    this.notifyDataChange()
+    return updated
+  }
+
   public async unarchiveActivity(orgId: string, activityId: string): Promise<boolean> {
     const all = this.getAllActivities()
     const act = all.find((a) => a.id === activityId && a.organization_id === orgId)
@@ -1064,7 +1226,31 @@ class StorageService {
     if (!options?.includeDeleted) {
       tasks = tasks.filter((t) => !t.deleted_at)
     }
-    return tasks
+    return this.applyManualOrder(tasks)
+  }
+
+  /**
+   * Menghormati urutan manual (drag & drop) per kegiatan.
+   * Bila sebuah kegiatan belum pernah diurutkan manual, urutan aslinya dipertahankan.
+   */
+  private applyManualOrder(tasks: Task[]): Task[] {
+    const byActivity = new Map<string, Task[]>()
+    for (const t of tasks) {
+      if (!byActivity.has(t.activity_id)) byActivity.set(t.activity_id, [])
+      byActivity.get(t.activity_id)!.push(t)
+    }
+    const result: Task[] = []
+    for (const list of byActivity.values()) {
+      const hasManual = list.some((t) => typeof t.sort_order === 'number')
+      if (!hasManual) {
+        result.push(...list)
+        continue
+      }
+      const indexed = list.map((t, i) => ({ t, i, s: typeof t.sort_order === 'number' ? t.sort_order : Number.MAX_SAFE_INTEGER }))
+      indexed.sort((a, b) => (a.s === b.s ? a.i - b.i : a.s - b.s))
+      result.push(...indexed.map((x) => x.t))
+    }
+    return result
   }
 
   public async createTask(data: Omit<Task, 'id' | 'created_at' | 'updated_at'>, actorName = 'Pengguna'): Promise<Task> {

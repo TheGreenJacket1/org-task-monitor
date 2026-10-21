@@ -561,10 +561,34 @@ export function App() {
             onUnarchiveTask={handleUnarchiveTask}
             onDeleteTask={handleDeleteTask}
             onOpenCreateTask={handleOpenCreateTask}
+            onBulkArchive={async (ids) => {
+              for (const id of ids) await storageService.archiveTask(id)
+              refreshData()
+              showToast(`${ids.length} tugas diarsipkan.`)
+            }}
+            onBulkDelete={async (ids) => {
+              for (const id of ids) await storageService.softDeleteTask(id)
+              refreshData()
+              showToast(`${ids.length} tugas dipindah ke tempat sampah.`)
+            }}
+            onReorderTasks={(orderedIds) => {
+              if (!selectedActivity) return
+              storageService.reorderTasks(selectedActivity.id, orderedIds)
+              refreshData()
+              showToast('Urutan tugas diperbarui.')
+            }}
           />
         )}
 
-        {activeTab === 'logs' && <ActivityLogView logs={logs} />}
+        {activeTab === 'logs' && (
+          <ActivityLogView
+            logs={logs}
+            onArchiveLog={async (id) => { await storageService.archiveLog(id); refreshData(); showToast('Riwayat diarsipkan.') }}
+            onUnarchiveLog={async (id) => { await storageService.unarchiveLog(id); refreshData(); showToast('Arsip riwayat dibuka.') }}
+            onDeleteLog={async (id) => { await storageService.softDeleteLog(id); refreshData(); showToast('Riwayat dipindah ke tempat sampah.') }}
+            onPermanentDeleteLog={async (id) => { await storageService.permanentlyDeleteLog(id); refreshData(); showToast('Riwayat dihapus permanen.') }}
+          />
+        )}
       </main>
 
       {/* Footer */}
@@ -679,6 +703,15 @@ export function App() {
         onUnarchive={handleUnarchiveTask}
         onDelete={handleDeleteTask}
         onQuickStatusChange={handleQuickStatusChange}
+        onDuplicate={async (dup) => {
+          try {
+            await storageService.createTask(dup as any)
+            refreshData()
+            showToast('Salinan tugas dibuat.')
+          } catch (e: any) {
+            showToast(e?.message || 'Gagal membuat salinan tugas.', 'error')
+          }
+        }}
       />
 
       {/* Activity Management Modal */}
@@ -691,6 +724,11 @@ export function App() {
           await storageService.createActivity(data)
           refreshData()
           showToast('Kegiatan baru berhasil dibuat!')
+        }}
+        onUpdateActivity={async (id, patch) => {
+          await storageService.updateActivity(currentOrgId, id, patch)
+          refreshData()
+          showToast('Kegiatan berhasil diperbarui.')
         }}
         onSetActiveActivity={async (id) => {
           await storageService.setActiveActivity(currentOrgId, id)
@@ -830,6 +868,18 @@ export function App() {
         onReloadData={async () => {
           await storageService.initSupabaseSync()
           refreshData()
+        }}
+        organizationId={currentOrgId}
+        activities={activities}
+        members={members}
+        selectedActivityId={selectedActivity?.id}
+        onImported={(r) => {
+          refreshData()
+          if (r.created > 0) {
+            showToast(`${r.created} tugas berhasil diimpor.${r.failed > 0 ? ` ${r.failed} baris dilewati.` : ''}`)
+          } else if (r.failed > 0) {
+            showToast('Tidak ada tugas yang berhasil diimpor. Periksa format CSV.', 'error')
+          }
         }}
       />
 

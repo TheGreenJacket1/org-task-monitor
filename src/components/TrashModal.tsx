@@ -61,8 +61,8 @@ export const TrashModal: React.FC<TrashModalProps> = ({
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full border border-slate-200 overflow-hidden my-6">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+      <div className="modal-sheet bg-white rounded-2xl shadow-2xl max-w-3xl w-full border border-slate-200 overflow-hidden my-6">
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Trash2 className="w-5 h-5 text-slate-600" />
@@ -71,17 +71,21 @@ export const TrashModal: React.FC<TrashModalProps> = ({
               <p className="text-xs text-slate-500">{total} item terhapus. Pulihkan atau hapus permanen.</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition">
+          <button
+            onClick={onClose}
+            className="flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition shrink-0"
+            title="Tutup"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="px-6 pt-4 flex gap-2 border-b border-slate-100">
+        <div className="px-6 pt-4 flex gap-2 border-b border-slate-100 overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg border-b-2 transition ${
+              className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold rounded-t-lg border-b-2 transition ${
                 tab === t.key ? 'border-red-500 text-red-700' : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
@@ -90,12 +94,12 @@ export const TrashModal: React.FC<TrashModalProps> = ({
           ))}
         </div>
 
-        <div className="p-6 max-h-[60vh] overflow-y-auto space-y-2">
+        <div className="modal-sheet-body p-6 max-h-[60vh] overflow-y-auto space-y-2">
           {tab === 'tasks' && deletedTasks.map((t) => (
-            <div key={t.id} className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
+            <div key={t.id} className="flex flex-wrap items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-slate-900 truncate">{t.title}</div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-slate-500 break-words">
                   {t.category} • PIC: {memberName(t.pic_id)} • {activityName(t.activity_id)} • Dihapus {t.deleted_at ? formatIndonesianDateTime(t.deleted_at) : '-'}
                 </div>
               </div>
@@ -108,7 +112,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({
                 </button>
               </div>
               {confirmId === t.id && (
-                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center justify-between gap-2">
+                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex flex-wrap items-center justify-between gap-2">
                   <span><AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Hapus permanen tidak dapat dibatalkan.</span>
                   <div className="flex gap-2">
                     <button onClick={() => setConfirmId(null)} className="px-2 py-1 bg-white border border-slate-300 rounded">Batal</button>
@@ -121,7 +125,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({
           {tab === 'tasks' && deletedTasks.length === 0 && <div className="text-center py-8 text-slate-400 text-xs">Tidak ada tugas di tempat sampah.</div>}
 
           {tab === 'activities' && deletedActivities.map((a) => (
-            <div key={a.id} className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
+            <div key={a.id} className="flex flex-wrap items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-slate-900 truncate">{a.name}</div>
                 <div className="text-xs text-slate-500">Dihapus {a.deleted_at ? formatIndonesianDateTime(a.deleted_at) : '-'}</div>
@@ -135,7 +139,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({
                 </button>
               </div>
               {confirmId === a.id && (
-                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center justify-between gap-2">
+                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex flex-wrap items-center justify-between gap-2">
                   <span><AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Hapus permanen kegiatan + tugasnya. Tidak dapat dibatalkan.</span>
                   <div className="flex gap-2">
                     <button onClick={() => setConfirmId(null)} className="px-2 py-1 bg-white border border-slate-300 rounded">Batal</button>
@@ -148,10 +152,10 @@ export const TrashModal: React.FC<TrashModalProps> = ({
           {tab === 'activities' && deletedActivities.length === 0 && <div className="text-center py-8 text-slate-400 text-xs">Tidak ada kegiatan di tempat sampah.</div>}
 
           {tab === 'members' && deletedMembers.map((m) => (
-            <div key={m.id} className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
+            <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-slate-900 truncate">{m.name}</div>
-                <div className="text-xs text-slate-500">{m.role} • Dihapus {m.deleted_at ? formatIndonesianDateTime(m.deleted_at) : '-'}</div>
+                <div className="text-xs text-slate-500 break-words">{m.role} • Dihapus {m.deleted_at ? formatIndonesianDateTime(m.deleted_at) : '-'}</div>
               </div>
               <div className="flex gap-2 shrink-0">
                 <button onClick={() => onRestoreMember(m.id)} className="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 flex items-center gap-1">
@@ -162,7 +166,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({
                 </button>
               </div>
               {confirmId === m.id && (
-                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center justify-between gap-2">
+                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex flex-wrap items-center justify-between gap-2">
                   <span><AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Hapus permanen anggota. Diblokir jika masih menjadi PIC tugas.</span>
                   <div className="flex gap-2">
                     <button onClick={() => setConfirmId(null)} className="px-2 py-1 bg-white border border-slate-300 rounded">Batal</button>
@@ -175,7 +179,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({
           {tab === 'members' && deletedMembers.length === 0 && <div className="text-center py-8 text-slate-400 text-xs">Tidak ada anggota di tempat sampah.</div>}
 
           {tab === 'logs' && deletedLogs.map((l) => (
-            <div key={l.id} className="flex items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
+            <div key={l.id} className="flex flex-wrap items-center justify-between gap-3 p-3 border border-slate-200 rounded-xl">
               <div className="min-w-0">
                 <div className="text-sm font-bold text-slate-900 truncate">{l.action}</div>
                 <div className="text-xs text-slate-500 truncate">{l.details}</div>
@@ -190,7 +194,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({
                 </button>
               </div>
               {confirmId === l.id && (
-                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center justify-between gap-2">
+                <div className="w-full mt-2 p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex flex-wrap items-center justify-between gap-2">
                   <span><AlertTriangle className="w-3.5 h-3.5 inline mr-1" />Hapus permanen log audit.</span>
                   <div className="flex gap-2">
                     <button onClick={() => setConfirmId(null)} className="px-2 py-1 bg-white border border-slate-300 rounded">Batal</button>
@@ -203,7 +207,7 @@ export const TrashModal: React.FC<TrashModalProps> = ({
           {tab === 'logs' && deletedLogs.length === 0 && <div className="text-center py-8 text-slate-400 text-xs">Tidak ada riwayat di tempat sampah.</div>}
         </div>
 
-        <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <div className="modal-sheet-footer px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button onClick={onClose} className="px-4 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition">
             Tutup
           </button>

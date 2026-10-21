@@ -135,8 +135,8 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden my-6">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+      <div className="modal-sheet bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden my-6">
         {/* Header */}
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -152,7 +152,8 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition"
+            className="flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition shrink-0"
+            title="Tutup"
           >
             <X className="w-5 h-5" />
           </button>
@@ -167,7 +168,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+        <div className="modal-sheet-body p-6 space-y-5 max-h-[70vh] overflow-y-auto">
           {totalUrgent === 0 ? (
             <div className="text-center py-10 bg-slate-50 rounded-2xl p-6">
               <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-2" />
@@ -237,7 +238,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <div className="modal-sheet-footer px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
             className="px-4 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition"

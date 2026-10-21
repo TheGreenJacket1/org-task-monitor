@@ -3,8 +3,6 @@ import {
   migrateLocalData,
   readStoredArray,
   normalizeTask,
-  createSnapshot,
-  SCHEMA_VERSION_INITIAL,
 } from '../services/localMigration'
 import { STORAGE_KEYS, SCHEMA_VERSION_CURRENT } from '../services/storageKeys'
 import { StorageLike } from '../services/localMigration'
@@ -78,7 +76,6 @@ describe('migrateLocalData', () => {
       [STORAGE_KEYS.TASKS]: V1_TASKS,
     })
     const before = storage.getItem(STORAGE_KEYS.TASKS)
-    const snapBefore = createSnapshot(storage, SCHEMA_VERSION_INITIAL)
     // simulate: ensure snapshot key absent, then migrate
     migrateLocalData(storage)
     const snapRaw = storage.getItem(STORAGE_KEYS.PRE_MIGRATION_BACKUP)

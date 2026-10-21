@@ -5,8 +5,6 @@ import {
   Edit2,
   Trash2,
   Users,
-  CheckCircle2,
-  AlertCircle,
   Phone,
   Mail,
 } from 'lucide-react'
@@ -146,8 +144,8 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
   const getFieldError = (field: string) => errors.find((e) => e.field === field)?.message
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+      <div className="modal-sheet bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6">
         {/* Header */}
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -163,14 +161,15 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition"
+            className="flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition shrink-0"
+            title="Tutup"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+        <div className="modal-sheet-body p-6 space-y-5 max-h-[75vh] overflow-y-auto">
           {/* Action Row */}
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -321,16 +320,16 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
           )}
 
           {/* Tab switcher */}
-          <div className="flex gap-2 border-b border-slate-200 pb-2">
+          <div className="flex gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
             <button
               onClick={() => setTab('activity')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${tab === 'activity' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}
+              className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold rounded-lg transition ${tab === 'activity' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}
             >
               Anggota Kegiatan Ini ({members.length})
             </button>
             <button
               onClick={() => setTab('all')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${tab === 'all' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}
+              className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-xs font-semibold rounded-lg transition ${tab === 'all' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-500 hover:bg-slate-100'}`}
             >
               Semua Anggota Organisasi ({allMembers.length})
             </button>
@@ -370,16 +369,20 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
                           </span>
                         )}
                       </div>
-                      <span className="text-xs text-slate-500 font-medium block">{member.role}</span>
-                      <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-0.5">
+                      <span className="text-xs text-slate-500 font-medium block truncate">
+                        {member.role}
+                      </span>
+                      <div className="flex items-center gap-3 flex-wrap text-[11px] text-slate-400 mt-0.5">
                         {member.email && (
-                          <span className="flex items-center gap-1">
-                            <Mail className="w-3 h-3" /> {member.email}
+                          <span className="flex items-center gap-1 min-w-0 max-w-full">
+                            <Mail className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{member.email}</span>
                           </span>
                         )}
                         {member.phone && (
-                          <span className="flex items-center gap-1">
-                            <Phone className="w-3 h-3" /> {member.phone}
+                          <span className="flex items-center gap-1 min-w-0 max-w-full">
+                            <Phone className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{member.phone}</span>
                           </span>
                         )}
                       </div>
@@ -429,7 +432,7 @@ export const MemberManagementModal: React.FC<MemberManagementModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <div className="modal-sheet-footer px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
             className="px-4 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition"

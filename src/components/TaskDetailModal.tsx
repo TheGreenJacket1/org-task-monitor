@@ -5,17 +5,19 @@ import {
   Archive,
   Trash2,
   ExternalLink,
-  Calendar,
-  User,
   Clock,
   RotateCcw,
   CheckCircle2,
-  FileCheck2,
-  AlertTriangle,
   FolderArchive,
+  Copy,
 } from 'lucide-react'
 import { Task, Member } from '../types'
-import { formatIndonesianDate, formatIndonesianDateTime, getDeadlineAlert } from '../utils/date'
+import {
+  formatIndonesianDate,
+  formatIndonesianDateTime,
+  getDeadlineAlert,
+  getJakartaTodayString,
+} from '../utils/date'
 
 interface TaskDetailModalProps {
   isOpen: boolean
@@ -27,6 +29,25 @@ interface TaskDetailModalProps {
   onUnarchive: (taskId: string) => void
   onDelete: (taskId: string) => void
   onQuickStatusChange: (taskId: string, status: Task['status'], revisionNotes?: string) => void
+  /**
+   * Dipanggil ketika pengguna menekan tombol "Duplikat".
+   * Callback menerima salinan tugas yang sudah disiapkan (judul berawalan "Salinan: ",
+   * status/progres direset, tanggal dihitung ulang). Tombol disembunyikan bila prop ini kosong.
+   */
+  onDuplicate?: (task: Task) => void
+}
+
+/**
+ * Selisih hari antara dua tanggal (format YYYY-MM-DD).
+ */
+function diffDaysBetween(startDate: string, endDate: string): number {
+  const s = (startDate || '').split('T')[0].split('-').map(Number)
+  const e = (endDate || '').split('T')[0].split('-').map(Number)
+  if (s.length !== 3 || e.length !== 3) return 0
+  const sUtc = Date.UTC(s[0], s[1] - 1, s[2])
+  const eUtc = Date.UTC(e[0], e[1] - 1, e[2])
+  if (Number.isNaN(sUtc) || Number.isNaN(eUtc)) return 0
+  return Math.max(0, Math.round((eUtc - sUtc) / 86400000))
 }
 
 export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
@@ -39,6 +60,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   onUnarchive,
   onDelete,
   onQuickStatusChange,
+  onDuplicate,
 }) => {
   const [showRevisionInput, setShowRevisionInput] = useState(false)
   const [quickRevisionNotes, setQuickRevisionNotes] = useState('')
@@ -55,9 +77,47 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     setQuickRevisionNotes('')
   }
 
+  /**
+   * Menyusun salinan tugas: judul diberi awalan "Salinan: ", progres/status direset,
+   * dan tanggal mulai + deadline dihitung ulang.
+   */
+  const handleDuplicate = () => {
+    if (!onDuplicate) return
+
+    const durationDays = diffDaysBetween(task.start_date, task.deadline)
+    const newStartDate = getJakartaTodayString()
+    const newDeadline = new Date(
+      Date.UTC(
+        Number(newStartDate.slice(0, 4)),
+        Number(newStartDate.slice(5, 7)) - 1,
+        Number(newStartDate.slice(8, 10)) + durationDays
+      )
+    )
+      .toISOString()
+      .slice(0, 10)
+
+    const now = new Date().toISOString()
+
+    onDuplicate({
+      ...task,
+      id: '',
+      title: `Salinan: ${task.title}`,
+      start_date: newStartDate,
+      deadline: newDeadline,
+      status: 'Belum dikerjakan',
+      progress: 0,
+      review_status: 'Belum diajukan',
+      revision_notes: '',
+      completed_at: null,
+      is_archived: false,
+      created_at: now,
+      updated_at: now,
+    })
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+      <div className="modal-sheet bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6">
         {/* Header */}
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -85,18 +145,19 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 </span>
               )}
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-slate-900 mt-1">{task.title}</h3>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 break-words">{task.title}</h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition shrink-0"
+            className="flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition shrink-0"
+            title="Tutup"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+        <div className="modal-sheet-body p-6 space-y-6 max-h-[75vh] overflow-y-auto">
           {/* Progress Bar & Status Badges */}
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div className="flex items-center justify-between mb-2">
@@ -146,7 +207,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
               Deskripsi
             </h4>
-            <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed bg-white p-3 rounded-xl border border-slate-100">
+            <p className="text-sm text-slate-700 whitespace-pre-line leading-relaxed bg-white p-3 rounded-xl border border-slate-100 break-words">
               {task.description || 'Tidak ada deskripsi rinci.'}
             </p>
           </div>
@@ -154,19 +215,19 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           {/* Metadata Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             {/* PIC */}
-            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 min-w-0">
               <div
-                className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white shadow-sm"
+                className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white shadow-sm shrink-0"
                 style={{ backgroundColor: pic?.avatar_color || '#16a34a' }}
               >
                 {pic?.name.charAt(0) || 'P'}
               </div>
-              <div>
+              <div className="min-w-0">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">
                   Penanggung Jawab (PIC)
                 </span>
-                <span className="font-bold text-slate-900">{pic?.name || 'Tidak ditentukan'}</span>
-                <span className="text-slate-500 block">{pic?.role || '-'}</span>
+                <span className="font-bold text-slate-900 block truncate">{pic?.name || 'Tidak ditentukan'}</span>
+                <span className="text-slate-500 block truncate">{pic?.role || '-'}</span>
               </div>
             </div>
 
@@ -317,8 +378,19 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         </div>
 
         {/* Footer Toolbar */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 flex-wrap">
+        <div className="modal-sheet-footer px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2">
+            {onDuplicate && (
+              <button
+                onClick={handleDuplicate}
+                title="Buat salinan tugas ini dengan progres direset"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition"
+              >
+                <Copy className="w-3.5 h-3.5 text-slate-600" />
+                Duplikat
+              </button>
+            )}
+
             {task.is_archived ? (
               <button
                 onClick={() => onUnarchive(task.id)}
