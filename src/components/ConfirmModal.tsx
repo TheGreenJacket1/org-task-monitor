@@ -1,10 +1,12 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 
 interface ConfirmModalProps {
   isOpen: boolean
   title: string
   message: string
+  impactSummary?: string[]
+  requireTypedText?: string
   confirmText?: string
   cancelText?: string
   isDestructive?: boolean
@@ -16,13 +18,21 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
   title,
   message,
+  impactSummary,
+  requireTypedText,
   confirmText = 'Konfirmasi',
   cancelText = 'Batal',
   isDestructive = false,
   onConfirm,
   onCancel,
 }) => {
+  const [typed, setTyped] = useState('')
+  React.useEffect(() => {
+    if (isOpen) setTyped('')
+  }, [isOpen])
   if (!isOpen) return null
+
+  const canConfirm = requireTypedText ? typed.trim() === requireTypedText.trim() : true
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
@@ -39,6 +49,25 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             <div className="flex-1">
               <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
               <p className="mt-2 text-sm text-slate-600 leading-relaxed">{message}</p>
+              {impactSummary && impactSummary.length > 0 && (
+                <ul className="mt-3 text-xs text-slate-700 list-disc pl-4 space-y-0.5">
+                  {impactSummary.map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              )}
+              {requireTypedText && (
+                <div className="mt-3">
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Ketik <strong>{requireTypedText}</strong> untuk konfirmasi
+                  </label>
+                  <input
+                    value={typed}
+                    onChange={(e) => setTyped(e.target.value)}
+                    className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none"
+                  />
+                </div>
+              )}
             </div>
             <button
               onClick={onCancel}
@@ -60,7 +89,8 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           <button
             type="button"
             onClick={onConfirm}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition ${
+            disabled={!canConfirm}
+            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed ${
               isDestructive
                 ? 'bg-red-600 hover:bg-red-700'
                 : 'bg-emerald-600 hover:bg-emerald-700'

@@ -4,6 +4,7 @@ import {
   Activity,
   Task,
   ActivityLog,
+  ActivityMember,
   SyncStatus,
 } from '../types'
 import {
@@ -13,17 +14,10 @@ import {
   initialDemoTasks,
   initialDemoLogs,
 } from '../data/demoData'
-import { getSupabaseClient } from './supabase'
+import { getSupabaseClient, isMissingRelation } from './supabase'
+import { migrateLocalData } from './localMigration'
 
-const STORAGE_KEYS = {
-  ORGANIZATIONS: 'org_monitor_organizations_v1',
-  MEMBERS: 'org_monitor_members_v1',
-  ACTIVITIES: 'org_monitor_activities_v1',
-  TASKS: 'org_monitor_tasks_v1',
-  LOGS: 'org_monitor_logs_v1',
-  CURRENT_ORG_ID: 'org_monitor_current_org_id_v1',
-  INITIALIZED: 'org_monitor_initialized_v1',
-}
+import { STORAGE_KEYS } from './storageKeys'
 
 export interface BackupData {
   version: string
@@ -48,12 +42,34 @@ class StorageService {
 
   constructor() {
     this.ensureInitialized()
+    try {
+      migrateLocalData(localStorage)
+    } catch (e) {
+      console.warn('Migrasi lokal gagal:', e)
+    }
     this.initSupabaseSync()
   }
 
   private ensureInitialized() {
     try {
       const initialized = localStorage.getItem(STORAGE_KEYS.INITIALIZED)
+      // Seed demo data ONLY if every data key is absent. Never overwrite existing data,
+      // even if the initialized flag is missing (e.g. after a partial restore).
+      const hasAnyData = [
+        STORAGE_KEYS.ORGANIZATIONS,
+        STORAGE_KEYS.MEMBERS,
+        STORAGE_KEYS.ACTIVITIES,
+        STORAGE_KEYS.TASKS,
+        STORAGE_KEYS.LOGS,
+      ].some((k) => localStorage.getItem(k) !== null)
+
+      if (hasAnyData) {
+        if (!initialized) {
+          localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true')
+        }
+        return
+      }
+
       if (!initialized) {
         this.loadDemoDataInternal()
         localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true')
@@ -191,55 +207,129 @@ class StorageService {
       })
   }
 
-  public async pullFromSupabase(): Promise<boolean> {
+  private pullGeneration = 0
+
+  public async pullFromSupabase(options?: { force?: boolean }): Promise<boolean> {
     const supabase = getSupabaseClient()
     if (!supabase) return false
 
+    const gen = ++this.pullGeneration
+    this.updateSyncStatus({ isSyncing: true, errorMessage: undefined })
+
     try {
-      this.updateSyncStatus({ isSyncing: true })
-      const [orgsRes, memsRes, actsRes, tasksRes, logsRes] = await Promise.all([
+      // Fetch all tables in parallel.
+      const [orgsRes, memsRes, actsRes, tasksRes, logsRes, amRes, metaRes] = await Promise.all([
         supabase.from('organizations').select('*').order('created_at', { ascending: false }),
         supabase.from('members').select('*').order('created_at', { ascending: true }),
         supabase.from('activities').select('*').order('created_at', { ascending: false }),
         supabase.from('tasks').select('*').order('created_at', { ascending: false }),
-        supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(200),
+        this.fetchAllLogs(supabase),
+        supabase.from('activity_members').select('*'),
+        supabase.from('app_meta').select('key,value'),
       ])
 
+      // Stale pull: a newer pull started; discard.
+      if (gen !== this.pullGeneration) return false
+
+      // Hard errors (except missing activity_members / app_meta) abort the whole pull.
       if (orgsRes.error) throw orgsRes.error
       if (memsRes.error) throw memsRes.error
       if (actsRes.error) throw actsRes.error
       if (tasksRes.error) throw tasksRes.error
+      if (logsRes.error) throw logsRes.error
 
-      // Hanya timpa data lokal jika Supabase benar-benar memiliki data,
-      // agar data lokal (termasuk demo) tidak hilang saat terhubung ke proyek kosong.
-      if (orgsRes.data && orgsRes.data.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.ORGANIZATIONS, JSON.stringify(orgsRes.data))
+      const amMissing = amRes.error && isMissingRelation(amRes.error)
+      if (amRes.error && !amMissing) throw amRes.error
+
+      const metaMissing = metaRes.error && isMissingRelation(metaRes.error)
+      if (metaRes.error && !metaMissing) throw metaRes.error
+
+      const orgs = (orgsRes.data ?? []) as any[]
+      const members = (memsRes.data ?? []) as any[]
+      const activities = (actsRes.data ?? []) as any[]
+      const tasks = (tasksRes.data ?? []) as any[]
+      const logs = (logsRes.data ?? []) as any[]
+      const activityMembers = amMissing ? null : ((amRes.data ?? []) as any[])
+
+      // Parse app_meta.
+      const meta: Record<string, unknown> = {}
+      if (!metaMissing && Array.isArray(metaRes.data)) {
+        for (const row of metaRes.data) {
+          if (row && typeof row.key === 'string') meta[row.key] = row.value
+        }
       }
-      if (memsRes.data && memsRes.data.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(memsRes.data))
+      const cloudInitialized = meta['cloud_initialized_at'] !== undefined
+
+      const localHasData = this.getOrganizations().length > 0
+
+      // If cloud is empty AND not explicitly initialized, do NOT overwrite local data.
+      // Surface a decision instead.
+      if (orgs.length === 0 && !cloudInitialized) {
+        this.updateSyncStatus({
+          isConnected: true,
+          isSyncing: false,
+          lastSyncAt: new Date().toISOString(),
+          errorMessage: localHasData
+            ? 'Cloud kosong. Data lokal belum diunggah. Buka Pengaturan untuk mengunggah atau gunakan cloud kosong.'
+            : undefined,
+        })
+        if (localHasData) {
+          // Mark as needs decision by leaving local untouched.
+          this.notifyDataChange()
+          return false
+        }
+        // Cloud genuinely empty and local empty: write empty arrays (no-op mostly).
       }
-      if (actsRes.data && actsRes.data.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(actsRes.data))
-      }
-      if (tasksRes.data && tasksRes.data.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasksRes.data))
-      }
-      if (logsRes.data && logsRes.data.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logsRes.data))
+
+      // Full snapshot replace when cloud is initialized (or cloud has data).
+      if (cloudInitialized || orgs.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.ORGANIZATIONS, JSON.stringify(orgs))
+        localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(members))
+        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(activities))
+        localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks))
+        localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logs))
+        if (activityMembers) {
+          localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(activityMembers))
+        }
+        // If cloud table missing, keep local membership (fallback) but warn.
+        if (amMissing) {
+          console.warn('Tabel activity_members belum ada di Supabase. Gunakan data membership lokal + jalankan migrasi SQL.')
+        }
       }
 
       this.updateSyncStatus({
         isConnected: true,
         isSyncing: false,
         lastSyncAt: new Date().toISOString(),
+        errorMessage: amMissing ? 'Migrasi database belum dijalankan (activity_members tidak ditemukan).' : undefined,
       })
       this.notifyDataChange()
       return true
     } catch (err: any) {
-      console.warn('Gagal menyinkronkan data dari Supabase:', err.message)
-      this.updateSyncStatus({ isSyncing: false, errorMessage: err.message })
+      console.warn('Gagal menyinkronkan data dari Supabase:', err?.message)
+      this.updateSyncStatus({ isSyncing: false, errorMessage: err?.message || 'Sinkronisasi gagal' })
       return false
     }
+  }
+
+  private async fetchAllLogs(supabase: any): Promise<{ data: any[] | null; error: any }> {
+    const pageSize = 1000
+    const all: any[] = []
+    let offset = 0
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data, error } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(offset, offset + pageSize - 1)
+      if (error) return { data: null, error }
+      if (!data || data.length === 0) break
+      all.push(...data)
+      if (data.length < pageSize) break
+      offset += pageSize
+    }
+    return { data: all, error: null }
   }
 
   // --- CRUD: Organizations ---
@@ -288,9 +378,11 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('organizations').insert(newOrg)
-      } catch (e) {
+        const { error } = await supabase.from('organizations').insert(newOrg)
+        if (error) throw error
+      } catch (e: any) {
         console.warn('Gagal simpan org ke Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal simpan org ke Supabase' })
       }
     }
 
@@ -315,9 +407,11 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('organizations').update(updated).eq('id', id)
-      } catch (e) {
+        const { error } = await supabase.from('organizations').update(updated).eq('id', id)
+        if (error) throw error
+      } catch (e: any) {
         console.warn('Gagal update org ke Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal update org ke Supabase' })
       }
     }
 
@@ -383,9 +477,113 @@ class StorageService {
     }
   }
 
-  public getMembers(orgId: string, onlyActive = false): Member[] {
-    const all = this.getAllMembers().filter((m) => m.organization_id === orgId)
+  public getMembers(orgId: string, onlyActive = false, options?: { includeDeleted?: boolean }): Member[] {
+    let all = this.getAllMembers().filter((m) => m.organization_id === orgId)
+    if (!options?.includeDeleted) {
+      all = all.filter((m) => !m.deleted_at)
+    }
     return onlyActive ? all.filter((m) => m.is_active) : all
+  }
+
+  public getMemberById(id: string, options?: { includeDeleted?: boolean }): Member | null {
+    const m = this.getAllMembers().find((x) => x.id === id)
+    if (!m) return null
+    if (!options?.includeDeleted && m.deleted_at) return null
+    return m
+  }
+
+  // --- Trash accessors ---
+  public getDeletedTasks(orgId: string, activityId?: string): Task[] {
+    return this.getTasks(orgId, activityId, true, { includeDeleted: true, includeTasksOfDeletedActivities: true })
+      .filter((t) => !!t.deleted_at)
+  }
+  public getDeletedActivities(orgId: string): Activity[] {
+    return this.getActivities(orgId, { includeDeleted: true }).filter((a) => !!a.deleted_at)
+  }
+  public getDeletedMembers(orgId: string): Member[] {
+    return this.getMembers(orgId, false, { includeDeleted: true }).filter((m) => !!m.deleted_at)
+  }
+  public getActivityImpact(activityId: string): { tasks: number; members: number; logs: number } {
+    const tasks = this.getAllTasks().filter((t) => t.activity_id === activityId && !t.deleted_at).length
+    const members = this.getAllActivityMembers().filter((am) => am.activity_id === activityId).length
+    const logs = this.getAllLogs().filter((l) => l.activity_id === activityId && !l.deleted_at).length
+    return { tasks, members, logs }
+  }
+
+  public getOrganizationImpact(orgId: string): { activities: number; tasks: number; members: number; logs: number } {
+    const activities = this.getAllActivities().filter((a) => a.organization_id === orgId && !a.deleted_at).length
+    const tasks = this.getAllTasks().filter((t) => t.organization_id === orgId && !t.deleted_at).length
+    const members = this.getAllMembers().filter((m) => m.organization_id === orgId && !m.deleted_at).length
+    const logs = this.getAllLogs().filter((l) => l.organization_id === orgId && !l.deleted_at).length
+    return { activities, tasks, members, logs }
+  }
+
+  public getDeletedLogs(orgId: string, limit = 200, activityId?: string): ActivityLog[] {
+    return this.getActivityLogs(orgId, limit, { includeDeleted: true, includeArchived: true, activityId })
+      .filter((l) => !!l.deleted_at)
+  }
+
+  // --- activity_members repository ---
+  private getAllActivityMembers(): ActivityMember[] {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.ACTIVITY_MEMBERS)
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed
+        .map((x) => (typeof x === 'object' && x && typeof x.activity_id === 'string' && typeof x.member_id === 'string'
+          ? { activity_id: x.activity_id, member_id: x.member_id, created_at: typeof x.created_at === 'string' ? x.created_at : new Date().toISOString() }
+          : null))
+        .filter((x): x is ActivityMember => x !== null)
+    } catch {
+      return []
+    }
+  }
+
+  public getActivityMemberIds(activityId: string): string[] {
+    return this.getAllActivityMembers()
+      .filter((am) => am.activity_id === activityId)
+      .map((am) => am.member_id)
+  }
+
+  public getActivityMembers(activityId: string, options?: { includeDeleted?: boolean }): Member[] {
+    const ids = new Set(this.getActivityMemberIds(activityId))
+    const activity = this.getAllActivities().find((a) => a.id === activityId)
+    if (!activity) return []
+    let members = this.getAllMembers().filter((m) => m.organization_id === activity.organization_id && ids.has(m.id))
+    if (!options?.includeDeleted) {
+      members = members.filter((m) => !m.deleted_at)
+    }
+    return members
+  }
+
+  public setActivityMembers(activityId: string, memberIds: string[]): boolean {
+    const activity = this.getAllActivities().find((a) => a.id === activityId)
+    if (!activity) return false
+    const orgMembers = new Set(this.getMembers(activity.organization_id, false, { includeDeleted: true }).map((m) => m.id))
+    const validIds = memberIds.filter((id) => orgMembers.has(id))
+    const others = this.getAllActivityMembers().filter((am) => am.activity_id !== activityId)
+    const now = new Date().toISOString()
+    const next = [...others, ...validIds.map((id) => ({ activity_id: activityId, member_id: id, created_at: now }))]
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(next))
+    this.notifyDataChange()
+    return true
+  }
+
+  public addMemberToActivity(activityId: string, memberId: string): boolean {
+    const ids = this.getActivityMemberIds(activityId)
+    if (ids.includes(memberId)) return true
+    return this.setActivityMembers(activityId, [...ids, memberId])
+  }
+
+  public removeMemberFromActivity(activityId: string, memberId: string): boolean {
+    // Block if member is PIC of any task in this activity (including archived/trashed).
+    const tasks = this.getAllTasks().filter((t) => t.activity_id === activityId && t.pic_id === memberId)
+    if (tasks.length > 0) {
+      throw new Error(`Anggota tidak dapat dilepas karena masih menjadi PIC pada ${tasks.length} tugas di kegiatan ini.`)
+    }
+    const ids = this.getActivityMemberIds(activityId).filter((id) => id !== memberId)
+    return this.setActivityMembers(activityId, ids)
   }
 
   public async createMember(data: Omit<Member, 'id' | 'created_at'>): Promise<Member> {
@@ -404,9 +602,11 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('members').insert(newMember)
-      } catch (e) {
+        const { error } = await supabase.from('members').insert(newMember)
+        if (error) throw error
+      } catch (e: any) {
         console.warn('Gagal simpan anggota ke Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal simpan anggota ke Supabase' })
       }
     }
 
@@ -427,9 +627,11 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('members').update(updated).eq('id', id)
-      } catch (e) {
+        const { error } = await supabase.from('members').update(updated).eq('id', id)
+        if (error) throw error
+      } catch (e: any) {
         console.warn('Gagal update anggota di Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal update anggota di Supabase' })
       }
     }
 
@@ -440,9 +642,9 @@ class StorageService {
   public async deleteMember(id: string): Promise<boolean> {
     // Check if member is PIC in any active tasks
     const allTasks = this.getAllTasks()
-    const assignedTasks = allTasks.filter((t) => t.pic_id === id && !t.is_archived)
+    const assignedTasks = allTasks.filter((t) => t.pic_id === id)
     if (assignedTasks.length > 0) {
-      throw new Error(`Anggota tidak dapat dihapus karena masih menjadi PIC pada ${assignedTasks.length} tugas aktif. Ubah PIC tugas terlebih dahulu.`)
+      throw new Error(`Anggota tidak dapat dihapus karena masih menjadi PIC pada ${assignedTasks.length} tugas (termasuk arsip/tempat sampah). Ubah PIC tugas terlebih dahulu.`)
     }
 
     const all = this.getAllMembers().filter((m) => m.id !== id)
@@ -461,6 +663,184 @@ class StorageService {
     return true
   }
 
+  // --- Soft delete / restore / permanent delete (Phase 1B) ---
+
+  public async softDeleteTask(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllTasks()
+    const task = all.find((t) => t.id === id)
+    if (!task || task.deleted_at) return false
+    task.deleted_at = new Date().toISOString()
+    task.updated_at = new Date().toISOString()
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(all))
+    await this.logActivity(task.organization_id, task.activity_id, task.id, actorName, 'TUGAS_DIPINDAH_SAMPAH', `Memindahkan tugas "${task.title}" ke tempat sampah.`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async restoreTask(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllTasks()
+    const task = all.find((t) => t.id === id)
+    if (!task || !task.deleted_at) return false
+    const parent = this.getAllActivities().find((a) => a.id === task.activity_id)
+    if (parent?.deleted_at) {
+      throw new Error('Kegiatan induk masih di tempat sampah. Pulihkan kegiatan terlebih dahulu.')
+    }
+    task.deleted_at = null
+    task.updated_at = new Date().toISOString()
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(all))
+    await this.logActivity(task.organization_id, task.activity_id, task.id, actorName, 'TUGAS_DIPULIHKAN', `Memulihkan tugas "${task.title}" dari tempat sampah.`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async permanentlyDeleteTask(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllTasks()
+    const task = all.find((t) => t.id === id)
+    if (!task || !task.deleted_at) return false
+    const filtered = all.filter((t) => t.id !== id)
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(filtered))
+    await this.logActivity(task.organization_id, task.activity_id, undefined, actorName, 'TUGAS_DIHAPUS_PERMANEN', `Menghapus permanen tugas "${task.title}".`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async softDeleteActivity(orgId: string, activityId: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllActivities()
+    const act = all.find((a) => a.id === activityId && a.organization_id === orgId)
+    if (!act || act.deleted_at) return false
+    act.deleted_at = new Date().toISOString()
+    act.is_active = false
+    act.updated_at = new Date().toISOString()
+    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(all))
+    await this.logActivity(orgId, activityId, undefined, actorName, 'KEGIATAN_DIPINDAH_SAMPAH', `Memindahkan kegiatan "${act.name}" ke tempat sampah.`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async restoreActivity(orgId: string, activityId: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllActivities()
+    const act = all.find((a) => a.id === activityId && a.organization_id === orgId)
+    if (!act || !act.deleted_at) return false
+    act.deleted_at = null
+    act.updated_at = new Date().toISOString()
+    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(all))
+    await this.logActivity(orgId, activityId, undefined, actorName, 'KEGIATAN_DIPULIHKAN', `Memulihkan kegiatan "${act.name}" dari tempat sampah.`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async permanentlyDeleteActivity(orgId: string, activityId: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllActivities()
+    const act = all.find((a) => a.id === activityId && a.organization_id === orgId)
+    if (!act || !act.deleted_at) return false
+    const tasks = this.getAllTasks().filter((t) => t.activity_id !== activityId)
+    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks))
+    const ams = this.getAllActivityMembers().filter((am) => am.activity_id !== activityId)
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(ams))
+    const filtered = all.filter((a) => a.id !== activityId)
+    localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(filtered))
+    const logs = this.getAllLogs().map((l) => (l.activity_id === activityId ? { ...l, activity_id: undefined } : l))
+    localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logs))
+    await this.logActivity(orgId, undefined, undefined, actorName, 'KEGIATAN_DIHAPUS_PERMANEN', `Menghapus permanen kegiatan "${act.name}".`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async softDeleteMember(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllMembers()
+    const member = all.find((m) => m.id === id)
+    if (!member || member.deleted_at) return false
+    const assigned = this.getAllTasks().filter((t) => t.pic_id === id)
+    if (assigned.length > 0) {
+      throw new Error(`Anggota tidak dapat dihapus karena masih menjadi PIC pada ${assigned.length} tugas. Ubah PIC tugas terlebih dahulu.`)
+    }
+    member.deleted_at = new Date().toISOString()
+    localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(all))
+    const ams = this.getAllActivityMembers().filter((am) => am.member_id !== id)
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(ams))
+    await this.logActivity(member.organization_id, undefined, undefined, actorName, 'ANGGOTA_DIPINDAH_SAMPAH', `Memindahkan anggota "${member.name}" ke tempat sampah.`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async restoreMember(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllMembers()
+    const member = all.find((m) => m.id === id)
+    if (!member || !member.deleted_at) return false
+    member.deleted_at = null
+    localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(all))
+    await this.logActivity(member.organization_id, undefined, undefined, actorName, 'ANGGOTA_DIPULIHKAN', `Memulihkan anggota "${member.name}" dari tempat sampah.`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async permanentlyDeleteMember(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllMembers()
+    const member = all.find((m) => m.id === id)
+    if (!member || !member.deleted_at) return false
+    const assigned = this.getAllTasks().filter((t) => t.pic_id === id)
+    if (assigned.length > 0) {
+      throw new Error(`Anggota tidak dapat dihapus permanen karena masih menjadi PIC pada ${assigned.length} tugas.`)
+    }
+    const filtered = all.filter((m) => m.id !== id)
+    localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(filtered))
+    const ams = this.getAllActivityMembers().filter((am) => am.member_id !== id)
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(ams))
+    await this.logActivity(member.organization_id, undefined, undefined, actorName, 'ANGGOTA_DIHAPUS_PERMANEN', `Menghapus permanen anggota "${member.name}".`)
+    this.notifyDataChange()
+    return true
+  }
+
+  public async softDeleteLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllLogs()
+    const log = all.find((l) => l.id === id)
+    if (!log || log.deleted_at) return false
+    log.deleted_at = new Date().toISOString()
+    localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(all))
+    this.notifyDataChange()
+    return true
+  }
+
+  public async restoreLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllLogs()
+    const log = all.find((l) => l.id === id)
+    if (!log || !log.deleted_at) return false
+    log.deleted_at = null
+    localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(all))
+    this.notifyDataChange()
+    return true
+  }
+
+  public async permanentlyDeleteLog(id: string): Promise<boolean> {
+    const all = this.getAllLogs()
+    const log = all.find((l) => l.id === id)
+    if (!log || !log.deleted_at) return false
+    const filtered = all.filter((l) => l.id !== id)
+    localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(filtered))
+    this.notifyDataChange()
+    return true
+  }
+
+  public async archiveLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllLogs()
+    const log = all.find((l) => l.id === id)
+    if (!log) return false
+    log.is_archived = true
+    localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(all))
+    this.notifyDataChange()
+    return true
+  }
+
+  public async unarchiveLog(id: string, actorName = 'Pengguna'): Promise<boolean> {
+    const all = this.getAllLogs()
+    const log = all.find((l) => l.id === id)
+    if (!log) return false
+    log.is_archived = false
+    localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(all))
+    this.notifyDataChange()
+    return true
+  }
+
   // --- CRUD: Activities ---
 
   private getAllActivities(): Activity[] {
@@ -472,13 +852,17 @@ class StorageService {
     }
   }
 
-  public getActivities(orgId: string): Activity[] {
-    return this.getAllActivities().filter((a) => a.organization_id === orgId)
+  public getActivities(orgId: string, options?: { includeDeleted?: boolean }): Activity[] {
+    let acts = this.getAllActivities().filter((a) => a.organization_id === orgId)
+    if (!options?.includeDeleted) {
+      acts = acts.filter((a) => !a.deleted_at)
+    }
+    return acts
   }
 
   public getActiveActivity(orgId: string): Activity | null {
     const acts = this.getActivities(orgId)
-    return acts.find((a) => a.is_active && !a.is_archived) || null
+    return acts.find((a) => a.is_active && !a.is_archived && !a.deleted_at) || null
   }
 
   public async createActivity(data: Omit<Activity, 'id' | 'created_at' | 'updated_at'>): Promise<Activity> {
@@ -486,15 +870,8 @@ class StorageService {
     const orgId = data.organization_id
     this.assertOrganizationExists(orgId)
 
-    // Rule: "Setiap organisasi dapat memiliki beberapa kegiatan, tetapi hanya satu kegiatan aktif pada satu waktu."
-    if (data.is_active) {
-      for (const act of all) {
-        if (act.organization_id === orgId && act.is_active) {
-          act.is_active = false
-          act.updated_at = new Date().toISOString()
-        }
-      }
-    }
+    // Phase 2: multiple activities may be active at the same time.
+    // No auto-deactivation.
 
     const newActivity: Activity = {
       ...data,
@@ -509,12 +886,11 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        if (newActivity.is_active) {
-          await supabase.from('activities').update({ is_active: false }).eq('organization_id', orgId)
-        }
-        await supabase.from('activities').insert(newActivity)
-      } catch (e) {
+        const { error } = await supabase.from('activities').insert(newActivity)
+        if (error) throw error
+      } catch (e: any) {
         console.warn('Gagal simpan kegiatan di Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal simpan kegiatan di Supabase' })
       }
     }
 
@@ -523,40 +899,90 @@ class StorageService {
     return newActivity
   }
 
-  public async setActiveActivity(orgId: string, activityId: string): Promise<boolean> {
+  public async setActivityActive(orgId: string, activityId: string, active: boolean): Promise<boolean> {
     const all = this.getAllActivities()
-    let found = false
-
-    for (const act of all) {
-      if (act.organization_id === orgId) {
-        if (act.id === activityId) {
-          act.is_active = true
-          act.is_archived = false // Unarchive if archived
-          act.updated_at = new Date().toISOString()
-          found = true
-        } else if (act.is_active) {
-          act.is_active = false
-          act.updated_at = new Date().toISOString()
-        }
-      }
+    const act = all.find((a) => a.id === activityId && a.organization_id === orgId)
+    if (!act || act.deleted_at) return false
+    if (act.is_archived && active) {
+      act.is_archived = false
     }
-
-    if (!found) return false
+    act.is_active = active
+    act.updated_at = new Date().toISOString()
     localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(all))
 
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('activities').update({ is_active: false }).eq('organization_id', orgId)
-        await supabase.from('activities').update({ is_active: true, is_archived: false }).eq('id', activityId)
-      } catch (e) {
-        console.warn('Gagal update kegiatan aktif di Supabase:', e)
+        const { error } = await supabase.from('activities').update({ is_active: active, is_archived: act.is_archived }).eq('id', activityId)
+        if (error) throw error
+      } catch (e: any) {
+        console.warn('Gagal update status aktif kegiatan di Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal update status aktif kegiatan' })
       }
     }
 
-    await this.logActivity(orgId, activityId, undefined, 'Sistem', 'KEGIATAN_AKTIF', `Menetapkan kegiatan aktif saat ini.`)
+    await this.logActivity(orgId, activityId, undefined, 'Sistem', active ? 'KEGIATAN_AKTIF' : 'KEGIATAN_NONAKTIF', `Mengubah status aktif kegiatan "${act.name}".`)
     this.notifyDataChange()
     return true
+  }
+
+  // Backward-compatible wrapper (activates a single activity, no deactivation of others in Phase 2).
+  public async setActiveActivity(orgId: string, activityId: string): Promise<boolean> {
+    return this.setActivityActive(orgId, activityId, true)
+  }
+
+  // --- Selected activity (Phase 2) ---
+  public getSelectedActivityId(orgId: string): string {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.SELECTED_ACTIVITY)
+      if (!raw) return ''
+      const map = JSON.parse(raw)
+      if (map && typeof map === 'object' && typeof map[orgId] === 'string') {
+        return map[orgId]
+      }
+    } catch {
+      // ignore
+    }
+    return ''
+  }
+
+  public setSelectedActivityId(orgId: string, activityId: string): void {
+    try {
+      let map: Record<string, string> = {}
+      const raw = localStorage.getItem(STORAGE_KEYS.SELECTED_ACTIVITY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object') map = parsed
+      }
+      if (activityId) map[orgId] = activityId
+      else delete map[orgId]
+      localStorage.setItem(STORAGE_KEYS.SELECTED_ACTIVITY, JSON.stringify(map))
+    } catch (e) {
+      console.warn('Gagal simpan selected activity:', e)
+    }
+    this.notifyDataChange()
+  }
+
+  public getSelectedActivity(orgId: string): Activity | null {
+    const id = this.getSelectedActivityId(orgId)
+    const acts = this.getActivities(orgId) // excludes deleted
+    if (id) {
+      const found = acts.find((a) => a.id === id)
+      if (found) return found
+    }
+    // Fallback: active activity with most tasks, else first with tasks, else first active, else first.
+    const tasksByActivity = new Map<string, number>()
+    for (const t of this.getTasks(orgId, undefined, true, { includeTasksOfDeletedActivities: false })) {
+      tasksByActivity.set(t.activity_id, (tasksByActivity.get(t.activity_id) ?? 0) + 1)
+    }
+    const sorted = [...acts].sort((a, b) => {
+      const ta = tasksByActivity.get(a.id) ?? 0
+      const tb = tasksByActivity.get(b.id) ?? 0
+      if (tb !== ta) return tb - ta
+      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+    return sorted[0] ?? null
   }
 
   public async archiveActivity(orgId: string, activityId: string): Promise<boolean> {
@@ -619,13 +1045,24 @@ class StorageService {
     }
   }
 
-  public getTasks(orgId: string, activityId?: string, includeArchived = false): Task[] {
+  public getTasks(orgId: string, activityId?: string, includeArchived = false, options?: { includeDeleted?: boolean; includeTasksOfDeletedActivities?: boolean }): Task[] {
+    const deletedActivityIds = new Set(
+      this.getAllActivities()
+        .filter((a) => a.deleted_at)
+        .map((a) => a.id)
+    )
     let tasks = this.getAllTasks().filter((t) => t.organization_id === orgId)
     if (activityId) {
       tasks = tasks.filter((t) => t.activity_id === activityId)
     }
+    if (!options?.includeTasksOfDeletedActivities) {
+      tasks = tasks.filter((t) => !deletedActivityIds.has(t.activity_id))
+    }
     if (!includeArchived) {
       tasks = tasks.filter((t) => !t.is_archived)
+    }
+    if (!options?.includeDeleted) {
+      tasks = tasks.filter((t) => !t.deleted_at)
     }
     return tasks
   }
@@ -671,9 +1108,11 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('tasks').insert(newTask)
-      } catch (e) {
+        const { error } = await supabase.from('tasks').insert(newTask)
+        if (error) throw error
+      } catch (e: any) {
         console.warn('Gagal simpan tugas ke Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal simpan tugas ke Supabase' })
       }
     }
 
@@ -721,9 +1160,11 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('tasks').update(updated).eq('id', id)
-      } catch (e) {
+        const { error } = await supabase.from('tasks').update(updated).eq('id', id)
+        if (error) throw error
+      } catch (e: any) {
         console.warn('Gagal update tugas di Supabase:', e)
+        this.updateSyncStatus({ errorMessage: e?.message || 'Gagal update tugas di Supabase' })
       }
     }
 
@@ -825,10 +1266,18 @@ class StorageService {
     }
   }
 
-  public getActivityLogs(orgId: string, limit = 50): ActivityLog[] {
-    return this.getAllLogs()
-      .filter((l) => l.organization_id === orgId)
-      .slice(0, limit)
+  public getActivityLogs(orgId: string, limit = 50, options?: { includeDeleted?: boolean; includeArchived?: boolean; activityId?: string }): ActivityLog[] {
+    let logs = this.getAllLogs().filter((l) => l.organization_id === orgId)
+    if (options?.activityId) {
+      logs = logs.filter((l) => l.activity_id === options.activityId)
+    }
+    if (!options?.includeDeleted) {
+      logs = logs.filter((l) => !l.deleted_at)
+    }
+    if (options?.includeArchived === false) {
+      logs = logs.filter((l) => !l.is_archived)
+    }
+    return logs.slice(0, limit)
   }
 
   public async logActivity(
@@ -863,9 +1312,13 @@ class StorageService {
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
-        await supabase.from('activity_logs').insert(newLog)
-      } catch (e) {
-        // Silently log
+        const { error } = await supabase.from('activity_logs').insert(newLog)
+        if (error) {
+          console.warn('Gagal simpan log ke Supabase:', error.message)
+          this.updateSyncStatus({ errorMessage: error.message })
+        }
+      } catch (e: any) {
+        console.warn('Gagal simpan log ke Supabase:', e)
       }
     }
   }

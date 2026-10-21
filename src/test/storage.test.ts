@@ -7,11 +7,10 @@ describe('StorageService & Business Rules', () => {
     storageService.loadDemoData()
   })
 
-  it('enforces single active activity per organization', async () => {
+  it('allows multiple active activities per organization', async () => {
     const orgs = storageService.getOrganizations()
     const orgId = orgs[0].id
 
-    // Create first active activity
     const act1 = await storageService.createActivity({
       organization_id: orgId,
       name: 'Kegiatan A',
@@ -21,9 +20,6 @@ describe('StorageService & Business Rules', () => {
       is_archived: false,
     })
 
-    expect(storageService.getActiveActivity(orgId)?.id).toBe(act1.id)
-
-    // Create second active activity -> act1 must become inactive!
     const act2 = await storageService.createActivity({
       organization_id: orgId,
       name: 'Kegiatan B',
@@ -37,13 +33,15 @@ describe('StorageService & Business Rules', () => {
     const updatedAct1 = activities.find((a) => a.id === act1.id)
     const updatedAct2 = activities.find((a) => a.id === act2.id)
 
-    expect(updatedAct1?.is_active).toBe(false)
+    // Both remain active (multi-active).
+    expect(updatedAct1?.is_active).toBe(true)
     expect(updatedAct2?.is_active).toBe(true)
-    expect(storageService.getActiveActivity(orgId)?.id).toBe(act2.id)
 
-    // Reactivate act1 -> act2 becomes inactive
-    await storageService.setActiveActivity(orgId, act1.id)
-    expect(storageService.getActiveActivity(orgId)?.id).toBe(act1.id)
+    // Deactivate one explicitly.
+    await storageService.setActivityActive(orgId, act1.id, false)
+    const after = storageService.getActivities(orgId)
+    expect(after.find((a) => a.id === act1.id)?.is_active).toBe(false)
+    expect(after.find((a) => a.id === act2.id)?.is_active).toBe(true)
   })
 
   it('archives and unarchives activity with zero data loss', async () => {

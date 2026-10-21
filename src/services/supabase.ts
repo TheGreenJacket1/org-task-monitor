@@ -42,6 +42,26 @@ export function saveSupabaseConfig(config: SupabaseConfig | null): void {
 let cachedClient: SupabaseClient | null = null
 let currentConfigString = ''
 
+export function isMissingRelation(err: any): boolean {
+  if (!err) return false
+  const code = String(err.code || '')
+  const msg = String(err.message || '')
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('does not exist') ||
+    msg.includes('not found in schema cache') ||
+    msg.includes('relation') && msg.includes('does not exist')
+  )
+}
+
+export function isMissingColumn(err: any): boolean {
+  if (!err) return false
+  const code = String(err.code || '')
+  const msg = String(err.message || '')
+  return code === '42703' || (msg.includes('column') && msg.includes('does not exist'))
+}
+
 export function getSupabaseClient(): SupabaseClient | null {
   const config = getStoredSupabaseConfig()
   if (!config) {

@@ -27,6 +27,7 @@ export interface Member {
   avatar_color?: string
   is_active: boolean
   created_at: string
+  deleted_at?: string | null
 }
 
 export interface Activity {
@@ -40,6 +41,7 @@ export interface Activity {
   is_archived: boolean
   created_at: string
   updated_at: string
+  deleted_at?: string | null
 }
 
 export interface Task {
@@ -64,6 +66,7 @@ export interface Task {
   is_archived: boolean
   created_at: string
   updated_at: string
+  deleted_at?: string | null
 }
 
 export interface ActivityLog {
@@ -74,6 +77,14 @@ export interface ActivityLog {
   actor_name: string
   action: string
   details: string
+  created_at: string
+  is_archived?: boolean
+  deleted_at?: string | null
+}
+
+export interface ActivityMember {
+  activity_id: string
+  member_id: string
   created_at: string
 }
 
@@ -117,4 +128,52 @@ export interface SyncStatus {
   isSyncing: boolean
   lastSyncAt: string | null
   errorMessage?: string
+}
+
+export interface BackupDataV2 {
+  version: string
+  schemaVersion: number
+  exportedAt: string
+  source: 'cloud' | 'local' | 'mixed'
+  organizations: Organization[]
+  members: Member[]
+  activities: Activity[]
+  tasks: Task[]
+  activityLogs: ActivityLog[]
+  activityMembers: ActivityMember[]
+  counts: {
+    organizations: number
+    members: number
+    activities: number
+    tasks: number
+    activityLogs: number
+    activityMembers: number
+  }
+  lastSyncAt: string | null
+}
+
+export interface StorageHealth {
+  status: 'ok' | 'corrupt' | 'wrong-shape' | 'missing'
+  keys: Record<string, { status: string; count: number }>
+  schemaVersion: number
+  hasSnapshot: boolean
+  canMutate: boolean
+  errors: string[]
+}
+
+export interface MigrationReport {
+  fromVersion: number
+  toVersion: number
+  migrated: boolean
+  migratedKeys: string[]
+  skippedKeys: string[]
+  errors: string[]
+  counts: {
+    organizations: number
+    members: number
+    activities: number
+    tasks: number
+    activityLogs: number
+    activityMembers: number
+  }
 }
