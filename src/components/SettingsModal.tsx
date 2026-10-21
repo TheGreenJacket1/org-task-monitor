@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X,
   Settings,
@@ -12,13 +13,18 @@ import {
   AlertTriangle,
   Info,
   Server,
+  FileSpreadsheet,
+  Layers,
 } from 'lucide-react'
-import { SyncStatus } from '../types'
+import { Activity, Member, SyncStatus, TaskTemplate } from '../types'
 import {
   getStoredSupabaseConfig,
   saveSupabaseConfig,
   getSupabaseClient,
 } from '../services/supabase'
+import { storageService } from '../services/storage'
+import { CsvImportModal, CsvImportResult } from './CsvImportModal'
+import { TaskTemplateModal, TaskTemplateDraft } from './TaskTemplateModal'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -29,6 +35,18 @@ interface SettingsModalProps {
   onLoadDemoData: () => void
   onClearDemoData: () => void
   onReloadData: () => Promise<void>
+  /** ID organisasi aktif (dipakai saat impor CSV). */
+  organizationId?: string
+  /** Daftar kegiatan untuk dipilih sebagai tujuan impor CSV. */
+  activities?: Activity[]
+  /** Daftar anggota untuk pencocokan PIC pada impor CSV. */
+  members?: Member[]
+  /** Kegiatan yang sedang terpilih di aplikasi. */
+  selectedActivityId?: string
+  /** PIC yang sedang terpilih di aplikasi. */
+  selectedPicId?: string
+  /** Dipanggil setelah proses impor CSV selesai. */
+  onImported?: (result: CsvImportResult) => void
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -40,6 +58,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onLoadDemoData,
   onClearDemoData,
   onReloadData,
+  organizationId,
+  activities = [],
+  members = [],
+  selectedActivityId,
+  selectedPicId,
+  onImported,
 }) => {
   const currentConfig = getStoredSupabaseConfig()
   const [supabaseUrl, setSupabaseUrl] = useState(currentConfig?.url || '')
@@ -48,6 +72,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isTesting, setIsTesting] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [isImporting, setIsImporting] = useState(false)
+
+  // Bulk CSV import & task templates
+  const [isCsvModalOpen, setIsCsvModalOpen] = useState(false)
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
+  const [templates, setTemplates] = useState<TaskTemplate[]>([])
+
+  const loadTemplates = useCallback(() => {
+    try {
+      setTemplates(storageService.getTaskTemplates())
+    } catch {
+      setTemplates([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) loadTemplates()
+  }, [isOpen, loadTemplates])
 
   if (!isOpen) return null
 
@@ -111,6 +152,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     } finally {
       setIsImporting(false)
     }
+  }
+
+  const handleSaveTemplate = (template: TaskTemplateDraft) => {
+    storageService.saveTaskTemplate(template)
+    loadTemplates()
+  }
+
+  const handleDeleteTemplate = (id: string) => {
+    storageService.deleteTaskTemplate(id)
+    loadTemplates()
   }
 
   return (
@@ -336,6 +387,69 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Section 5: Bulk CSV Import & Task Templates */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Impor Tugas CSV (Bulk)
+              </h4>
+            </div>
+
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Impor banyak tugas sekaligus dari file CSV, atau simpan pola tugas berulang sebagai
+              template agar bisa dipakai ulang di form tugas.
+            </p>
+
+            {!organizationId && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>
+                  Organisasi belum dipilih. Impor CSV memerlukan organisasi aktif sebagai
+                  penanda data.
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col justify-between">
+                <div>
+                  <h5 className="font-bold text-slate-900 text-xs">Import CSV Tugas</h5>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Unggah file .csv, atur pemetaan kolom, lalu impor ke kegiatan terpilih.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCsvModalOpen(true)}
+                  className="mt-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Import CSV
+                </button>
+              </div>
+
+              <div className="p-3 bg-white border border-slate-200 rounded-xl flex flex-col justify-between">
+                <div>
+                  <h5 className="font-bold text-slate-900 text-xs">Kelola Template Tugas</h5>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {templates.length > 0
+                      ? `${templates.length} template tersimpan. Tambah, ubah, atau hapus template.`
+                      : 'Belum ada template. Simpan pola tugas agar bisa dipakai ulang.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTemplateModalOpen(true)}
+                  className="mt-3 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  Kelola Template Tugas
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
@@ -348,6 +462,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Bulk CSV Import Modal */}
+      {createPortal(
+        <CsvImportModal
+          isOpen={isCsvModalOpen}
+          onClose={() => setIsCsvModalOpen(false)}
+          activities={activities}
+          members={members}
+          defaultActivityId={selectedActivityId || ''}
+          defaultPicId={selectedPicId || ''}
+          organizationId={organizationId || ''}
+          onImported={(result) => {
+            onImported?.(result)
+          }}
+        />,
+        document.body
+      )}
+
+      {/* Task Template Manager Modal */}
+      {createPortal(
+        <TaskTemplateModal
+          isOpen={isTemplateModalOpen}
+          onClose={() => setIsTemplateModalOpen(false)}
+          members={members}
+          templates={templates}
+          mode="manage"
+          onSave={handleSaveTemplate}
+          onDelete={handleDeleteTemplate}
+        />,
+        document.body
+      )}
     </div>
   )
 }

@@ -38,8 +38,11 @@ Aplikasi ini sengaja dibangun **tanpa sistem login/registrasi pengguna (zero use
 
 ### A. Pengelolaan Multi-Organisasi & Kegiatan
 - **Multi-Organisasi:** Mendukung banyak organisasi dengan data terpisah.
-- **Aturan Kegiatan Tunggal Aktif:** Setiap organisasi dapat memiliki banyak kegiatan (misal: *TechFest 2026*, *Dies Natalis*, *Lomba Web Design*), tetapi **hanya satu kegiatan yang berstatus aktif pada satu waktu**. Mengaktifkan kegiatan baru otomatis menonaktifkan kegiatan lainnya.
+- **Multi-Kegiatan Aktif:** Setiap organisasi dapat memiliki **lebih dari satu kegiatan aktif secara bersamaan** (misal: *TechFest 2026* dan *Dies Natalis*). Pengguna bebas memilih kegiatan mana yang ditampilkan lewat **Activity Selector** pada sub-header.
+- **Selector Kegiatan:** Menampilkan seluruh kegiatan non-arsip beserta **jumlah tugas** masing-masing, sehingga tidak ada tugas yang "hilang" saat berpindah kegiatan.
+- **Edit Kegiatan:** Nama, deskripsi, tanggal mulai, dan tanggal target dapat diedit kapan saja dari menu *Kelola Kegiatan*.
 - **Arsip Tanpa Data Loss:** Kegiatan lama dapat diarsipkan dan dibuka kembali sewaktu-waktu tanpa kehilangan satu pun riwayat tugas.
+- **Anggota Per Kegiatan:** Setiap anggota dapat terdaftar di beberapa kegiatan. Daftar anggota, pilihan PIC, dan tugas otomatis mengikuti kegiatan yang sedang dipilih.
 - **Manajemen Anggota & PIC:** Kelola staf aktif, peran/jabatan, dan kontak. Sistem mencegah penghapusan anggota yang masih terdaftar sebagai PIC pada tugas aktif.
 
 ### B. Manajemen Siklus Hidup Tugas
@@ -74,6 +77,29 @@ Setiap tugas mencakup:
 - **Ekspor Cadangan (JSON):** Unduh seluruh snapshot data organisasi, kegiatan, anggota, tugas, dan log aktivitas dalam 1 klik.
 - **Pulihkan Data (JSON):** Unggah file JSON cadangan untuk memulihkan seluruh data secara instan.
 - **Data Demo Terisolasi:** Dilengkapi dataset demo bertanda `[DEMO]` yang dapat dimuat ulang atau dihapus bersih kapan saja.
+- **Tempat Sampah (Trash):** Penghapusan tugas, kegiatan, anggota, dan riwayat aktivitas selalu berupa *soft delete*. Item dapat dipulihkan kapan saja dari menu *Tempat Sampah*. Hapus permanen hanya tersedia dari dalam tempat sampah.
+- **Konfirmasi Bertingkat:** Aksi berisiko (hapus kegiatan) memerlukan pengetikan nama kegiatan, disertai ringkasan dampak (jumlah tugas/anggota/riwayat terdampak).
+- **Undo Toast:** Setelah penghapusan, toast 8 detik menawarkan tombol *Urungkan*.
+
+### E. Efektivitas & Efisiensi untuk Pengguna Expert
+- **Command Palette (`Ctrl/Cmd + K`):** Mencari dan menjalankan perintah tanpa menyentuh mouse (ganti kegiatan, tugas baru, buka trash, ekspor backup).
+- **Quick Add (`N`):** Form ringkas untuk menambah tugas berulang, dengan tombol *Simpan & tambah lagi*.
+- **Pengelompokan Tugas:** Kelompokkan daftar tugas menurut Kategori, Fase, Prioritas, Status, atau PIC.
+- **Bulk Actions:** Pilih banyak tugas sekaligus (checkbox + *select all*) lalu arsipkan atau pindahkan ke tempat sampah sekaligus.
+- **Saved Views:** Simpan kombinasi filter sebagai tampilan bernama untuk diakses cepat.
+- **Urutan Manual (Drag & Drop):** Atur urutan prioritas tugas dengan menyeret baris.
+- **Impor CSV Massal:** Impor puluhan tugas sekaligus dengan pemetaan kolom, pratinjau, dan validasi baris per baris.
+- **Template Tugas:** Simpan pola tugas yang sering dipakai (kategori, fase, prioritas, durasi default) lalu isi form otomatis.
+- **Mode Kepadatan (Compact):** Toggle tampilan rapat untuk layar besar.
+- **Riwayat dengan Filter:** Tampilkan 10/50/100 riwayat terbaru atau semua, arsipkan, dan hapus riwayat tertentu.
+
+### F. Tampilan Mobile / Android
+- **Bottom Navigation:** 5 tab (Dashboard, Tugas, Kegiatan, Anggota, Riwayat) + akses Sampah.
+- **Header Dua Baris:** Logo, selector organisasi, notifikasi, pengaturan, dan tombol tambah tugas (ikon ringkas).
+- **Kartu Tugas:** Tampilan kartu menggantikan tabel lebar pada layar kecil.
+- **Filter Lipat:** Panel filter dapat disembunyikan untuk menghemat ruang vertikal.
+- **Bottom Sheet Modal:** Semua modal berubah menjadi *bottom sheet* dengan header/footer sticky dan `safe-area` di layar kecil.
+- **Target Sentuh:** Minimal 44×44 px untuk semua tombol ikon.
 
 ---
 

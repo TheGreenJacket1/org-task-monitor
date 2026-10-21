@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X,
   AlertCircle,
@@ -8,6 +9,7 @@ import {
   Calendar,
   User,
   CheckCircle2,
+  Layers,
 } from 'lucide-react'
 import {
   Task,
@@ -17,9 +19,16 @@ import {
   TaskPriority,
   TaskStatus,
   TaskReviewStatus,
+  TaskTemplate,
 } from '../types'
 import { validateTask, ValidationError } from '../utils/validation'
 import { getJakartaTodayString } from '../utils/date'
+import { storageService } from '../services/storage'
+import {
+  TaskTemplateModal,
+  TaskTemplateDraft,
+  applyTemplateToTask,
+} from './TaskTemplateModal'
 
 interface TaskModalProps {
   isOpen: boolean
@@ -70,8 +79,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [errors, setErrors] = useState<ValidationError[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Task templates
+  const [templates, setTemplates] = useState<TaskTemplate[]>([])
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
+  const [templateMode, setTemplateMode] = useState<'pick' | 'manage'>('pick')
+
   // Active members only for PIC selection
   const activeMembers = members.filter((m) => m.is_active)
+
+  const loadTemplates = useCallback(() => {
+    try {
+      setTemplates(storageService.getTaskTemplates())
+    } catch {
+      setTemplates([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) loadTemplates()
+  }, [isOpen, loadTemplates])
 
   useEffect(() => {
     if (taskToEdit) {
@@ -152,6 +178,46 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const removeResultLink = (index: number) => {
     setResultLinks(resultLinks.filter((_, i) => i !== index))
   }
+
+  // --- Task templates ---
+  const openTemplatePicker = () => {
+    setTemplateMode('pick')
+    setIsTemplateModalOpen(true)
+  }
+
+  const openTemplateManager = () => {
+    setTemplateMode('manage')
+    setIsTemplateModalOpen(true)
+  }
+
+  const handleUseTemplate = (template: TaskTemplate) => {
+    const applied = applyTemplateToTask(template, startDate)
+
+    setTitle((applied.title as string) || '')
+    setDescription(applied.description || '')
+    setCategory(applied.category || 'Desain')
+    setPhase(applied.phase || 'Pra-acara')
+    setPriority(applied.priority || 'Sedang')
+    if (applied.pic_id) setPicId(applied.pic_id as string)
+    if (applied.start_date) setStartDate(applied.start_date)
+    if (applied.deadline) setDeadline(applied.deadline)
+    setErrors([])
+    setIsTemplateModalOpen(false)
+  }
+
+  const handleSaveTemplate = (template: TaskTemplateDraft) => {
+    storageService.saveTaskTemplate(template)
+    loadTemplates()
+  }
+
+  const handleDeleteTemplate = (id: string) => {
+    storageService.deleteTaskTemplate(id)
+    loadTemplates()
+  }
+
+  const quickTemplates = [...templates]
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .slice(0, 5)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -266,6 +332,38 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             {getFieldError('title') && (
               <p className="mt-1 text-xs text-red-600 font-medium">{getFieldError('title')}</p>
             )}
+
+            {/* Template Shortcuts */}
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={openTemplatePicker}
+                className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition flex items-center gap-1.5"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Gunakan Template
+              </button>
+
+              <button
+                type="button"
+                onClick={openTemplateManager}
+                className="px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+              >
+                Kelola Template
+              </button>
+
+              {quickTemplates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => handleUseTemplate(template)}
+                  title={`Terapkan template: ${template.name}`}
+                  className="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:border-emerald-400 hover:text-emerald-700 transition max-w-[180px] truncate"
+                >
+                  {template.name}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Description */}
@@ -588,6 +686,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Task Template Modal (pilih / kelola template) */}
+      {createPortal(
+        <TaskTemplateModal
+          isOpen={isTemplateModalOpen}
+          onClose={() => setIsTemplateModalOpen(false)}
+          members={members}
+          templates={templates}
+          mode={templateMode}
+          onSave={handleSaveTemplate}
+          onDelete={handleDeleteTemplate}
+          onUse={handleUseTemplate}
+        />,
+        document.body
+      )}
     </div>
   )
 }

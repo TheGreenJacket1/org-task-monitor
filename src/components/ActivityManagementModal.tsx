@@ -3,12 +3,10 @@ import {
   X,
   Plus,
   Calendar,
-  CheckCircle2,
   Archive,
+  Edit2,
   FolderArchive,
   Trash2,
-  AlertCircle,
-  Clock,
   Radio,
 } from 'lucide-react'
 import { Activity } from '../types'
@@ -24,6 +22,7 @@ interface ActivityManagementModalProps {
   onSetActiveActivity: (activityId: string) => Promise<void>
   onArchiveActivity: (activityId: string) => Promise<void>
   onUnarchiveActivity: (activityId: string) => Promise<void>
+  onUpdateActivity?: (activityId: string, patch: Partial<Activity>) => Promise<void>
   onDeleteActivity?: (activityId: string) => void
 }
 
@@ -36,9 +35,11 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
   onSetActiveActivity,
   onArchiveActivity,
   onUnarchiveActivity,
+  onUpdateActivity,
   onDeleteActivity,
 }) => {
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [startDate, setStartDate] = useState('')
@@ -82,8 +83,13 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
     setIsSubmitting(true)
 
     try {
-      await onCreateActivity(payload)
+      if (editingActivityId && onUpdateActivity) {
+        await onUpdateActivity(editingActivityId, payload)
+      } else {
+        await onCreateActivity(payload)
+      }
       setShowCreateForm(false)
+      setEditingActivityId(null)
       setName('')
       setDescription('')
       setStartDate('')
@@ -96,11 +102,22 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
     }
   }
 
+  const startEditActivity = (act: Activity) => {
+    setEditingActivityId(act.id)
+    setName(act.name)
+    setDescription(act.description || '')
+    setStartDate(act.start_date)
+    setEndDate(act.end_date)
+    setIsActive(act.is_active)
+    setShowCreateForm(true)
+    setErrors([])
+  }
+
   const getFieldError = (field: string) => errors.find((e) => e.field === field)?.message
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6">
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+      <div className="modal-sheet bg-white rounded-2xl shadow-2xl max-w-2xl w-full border border-slate-200 overflow-hidden my-6">
         {/* Header */}
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -110,20 +127,21 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
             <div>
               <h3 className="text-base font-bold text-slate-900">Kelola Kegiatan Organisasi</h3>
               <p className="text-xs text-slate-500">
-                Hanya 1 kegiatan aktif pada satu waktu. Kegiatan lama dapat diarsipkan tanpa kehilangan data.
+                Lebih dari 1 kegiatan dapat aktif bersamaan. Pilih kegiatan yang ingin ditampilkan melalui selector. Kegiatan lama dapat diarsipkan tanpa kehilangan data.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition"
+            className="flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60 transition shrink-0"
+            title="Tutup"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Body Content */}
-        <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+        <div className="modal-sheet-body p-6 space-y-5 max-h-[75vh] overflow-y-auto">
           {/* Action Bar */}
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -142,7 +160,7 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
           {showCreateForm && (
             <form onSubmit={handleCreateSubmit} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
               <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                Formulir Kegiatan Baru
+                {editingActivityId ? 'Edit Kegiatan' : 'Formulir Kegiatan Baru'}
               </h4>
 
               {errors.some((e) => e.field === 'general') && (
@@ -327,6 +345,16 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
                           </button>
                         )
                       )}
+                      {onUpdateActivity && (
+                        <button
+                          onClick={() => startEditActivity(act)}
+                          className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition flex items-center gap-1"
+                          title="Edit kegiatan"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                      )}
                       {onDeleteActivity && (
                         <button
                           onClick={() => onDeleteActivity(act.id)}
@@ -346,7 +374,7 @@ export const ActivityManagementModal: React.FC<ActivityManagementModalProps> = (
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <div className="modal-sheet-footer px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
             className="px-4 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition"

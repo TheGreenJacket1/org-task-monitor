@@ -23,6 +23,7 @@ export const STORAGE_KEYS = {
   LAST_DESTRUCTIVE_BACKUP: 'org_monitor_last_destructive_backup_v1',
   SYNC_META: 'org_monitor_sync_meta_v1',
   PENDING_WRITES: 'org_monitor_pending_writes_v1',
+  TEMPLATES: 'org_monitor_task_templates_v1',
 
   // Phase 2+
   SELECTED_ACTIVITY: 'org_monitor_selected_activity_v1',

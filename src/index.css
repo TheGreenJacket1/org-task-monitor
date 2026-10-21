@@ -34,3 +34,78 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Prevent horizontal page scroll on small screens */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* Safe area helpers (iOS notch / Android gesture bar) */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.mb-safe {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Mobile bottom-sheet behaviour for modals.
+   Applied via the `modal-sheet` class on the modal panel. */
+@media (max-width: 767px) {
+  .modal-sheet {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border-radius: 1.25rem 1.25rem 0 0 !important;
+    max-height: 92dvh !important;
+    display: flex;
+    flex-direction: column;
+    animation: sheet-up 0.22s ease-out;
+  }
+
+  .modal-sheet > .modal-sheet-body {
+    max-height: none !important;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-sheet > .modal-sheet-footer {
+    position: sticky;
+    bottom: 0;
+    background: #f8fafc;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Touch target minimum 44x44 for interactive icon buttons on mobile */
+@media (max-width: 767px) {
+  button[title] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Compact density mode (expert users) */
+.density-compact table td,
+.density-compact table th {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
+}
