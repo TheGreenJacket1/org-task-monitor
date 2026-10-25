@@ -99,6 +99,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (isOpen) loadTemplates()
   }, [isOpen, loadTemplates])
 
+  // Keep PIC selection valid when members are added/changed while the modal is open.
+  useEffect(() => {
+    if (!isOpen || taskToEdit) return
+    if (!picId || !activeMembers.some((m) => m.id === picId)) {
+      setPicId(activeMembers[0]?.id || '')
+    }
+  }, [isOpen, members, taskToEdit])
+
   useEffect(() => {
     if (taskToEdit) {
       setTitle(taskToEdit.title)

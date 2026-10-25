@@ -36,6 +36,14 @@ export const QuickAddTaskModal: React.FC<QuickAddTaskModalProps> = ({
     }
   }, [isOpen])
 
+  // Keep PIC selection valid when members change while the modal is open.
+  useEffect(() => {
+    if (!isOpen) return
+    if (!picId || !activeMembers.some((m) => m.id === picId)) {
+      setPicId(activeMembers[0]?.id || '')
+    }
+  }, [isOpen, members])
+
   if (!isOpen) return null
 
   const submit = async (keepOpen: boolean) => {

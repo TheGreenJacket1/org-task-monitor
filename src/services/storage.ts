@@ -600,6 +600,26 @@ class StorageService {
     all.push(newMember)
     localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(all))
 
+    // Register the new member to every non-deleted activity in the organization
+    // (all-to-all), mirroring the migration backfill, so the member is available
+    // as a PIC option in the task form of any activity.
+    const orgActivities = this.getAllActivities().filter(
+      (a) => a.organization_id === newMember.organization_id && !a.deleted_at
+    )
+    if (orgActivities.length > 0) {
+      const ams = this.getAllActivityMembers()
+      const existing = new Set(ams.map((am) => `${am.activity_id}:${am.member_id}`))
+      const now = new Date().toISOString()
+      for (const act of orgActivities) {
+        const key = `${act.id}:${newMember.id}`
+        if (!existing.has(key)) {
+          ams.push({ activity_id: act.id, member_id: newMember.id, created_at: now })
+          existing.add(key)
+        }
+      }
+      localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(ams))
+    }
+
     const supabase = getSupabaseClient()
     if (supabase) {
       try {
@@ -650,6 +670,10 @@ class StorageService {
 
     const all = this.getAllMembers().filter((m) => m.id !== id)
     localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(all))
+
+    // Clean up membership links for the deleted member.
+    const ams = this.getAllActivityMembers().filter((am) => am.member_id !== id)
+    localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(ams))
 
     const supabase = getSupabaseClient()
     if (supabase) {
@@ -907,6 +931,26 @@ class StorageService {
     if (!member || !member.deleted_at) return false
     member.deleted_at = null
     localStorage.setItem(STORAGE_KEYS.MEMBERS, JSON.stringify(all))
+
+    // Re-register the restored member to all non-deleted activities in the org,
+    // mirroring the all-to-all backfill so they appear as PIC options again.
+    const orgActivities = this.getAllActivities().filter(
+      (a) => a.organization_id === member.organization_id && !a.deleted_at
+    )
+    if (orgActivities.length > 0) {
+      const ams = this.getAllActivityMembers()
+      const existing = new Set(ams.map((am) => `${am.activity_id}:${am.member_id}`))
+      const now = new Date().toISOString()
+      for (const act of orgActivities) {
+        const key = `${act.id}:${member.id}`
+        if (!existing.has(key)) {
+          ams.push({ activity_id: act.id, member_id: member.id, created_at: now })
+          existing.add(key)
+        }
+      }
+      localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(ams))
+    }
+
     await this.logActivity(member.organization_id, undefined, undefined, actorName, 'ANGGOTA_DIPULIHKAN', `Memulihkan anggota "${member.name}" dari tempat sampah.`)
     this.notifyDataChange()
     return true
@@ -1020,6 +1064,23 @@ class StorageService {
 
     all.unshift(newActivity)
     localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify(all))
+
+    // Register all existing organization members to the new activity (all-to-all),
+    // so they are available as PIC options in the task form of this activity.
+    const orgMembers = this.getAllMembers().filter((m) => m.organization_id === orgId && !m.deleted_at)
+    if (orgMembers.length > 0) {
+      const ams = this.getAllActivityMembers()
+      const existing = new Set(ams.map((am) => `${am.activity_id}:${am.member_id}`))
+      const now = new Date().toISOString()
+      for (const m of orgMembers) {
+        const key = `${newActivity.id}:${m.id}`
+        if (!existing.has(key)) {
+          ams.push({ activity_id: newActivity.id, member_id: m.id, created_at: now })
+          existing.add(key)
+        }
+      }
+      localStorage.setItem(STORAGE_KEYS.ACTIVITY_MEMBERS, JSON.stringify(ams))
+    }
 
     const supabase = getSupabaseClient()
     if (supabase) {
